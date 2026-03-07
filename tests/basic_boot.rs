@@ -6,27 +6,13 @@
 
 use core::panic::PanicInfo;
 
-mod serial;
-mod vga;
-
 #[unsafe(no_mangle)]
-#[allow(unreachable_code)]
 pub extern "C" fn _start() -> ! {
-    #[cfg(test)]
-    BazOS::exit_qemu(BazOS::QemuExitCode::Success);
+    test_main();
 
     loop {}
 }
 
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    fill_screen!(Blue);
-    println!("{}", info);
-    loop {}
-}
-
-#[cfg(test)]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     BazOS::test_panic_handler(info)
