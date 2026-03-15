@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 #![no_std]
 #![cfg_attr(test, no_main)]
 #![feature(custom_test_frameworks)]
@@ -7,10 +8,19 @@
 use core::ops::Fn;
 use core::panic::PanicInfo;
 
+use bootloader::BootInfo;
+#[cfg(test)]
+use bootloader::entry_point;
 use x86_64::instructions::port::Port;
 
-pub mod serial;
-pub mod vga;
+use crate::gdt::init_gdt;
+
+mod gdt;
+mod interrupts;
+mod memory;
+mod serial;
+mod utils;
+mod vga;
 
 pub trait Testable {
     fn run(&self) -> ();
@@ -36,13 +46,29 @@ pub fn test_runner(tests: &[&dyn Testable]) {
 }
 
 #[cfg(test)]
-#[unsafe(no_mangle)]
-pub extern "C" fn _start() -> ! {
+entry_point!(main);
+
+#[cfg(test)]
+pub fn main(_boot_info: &'static BootInfo) -> ! {
+    init();
     test_main();
-    loop {}
+    hlt_loop();
 }
 
-pub fn test_panic_handler(info: &PanicInfo) -> ! {
+pub fn hlt_loop() -> ! {
+    loop {
+        x86_64::instructions::hlt();
+    }
+}
+
+pub fn init() {
+    interrupts::disable();
+    init_gdt();
+    interrupts::init_idt();
+    interrupts::enable();
+}
+
+pub fn panic_handler_for_tests(info: &PanicInfo) -> ! {
     serial_println!("[failed]\n");
     serial_println!("Error: {}\n", info);
     exit_qemu(QemuExitCode::Failed);
@@ -50,8 +76,8 @@ pub fn test_panic_handler(info: &PanicInfo) -> ! {
 
 #[cfg(test)]
 #[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    test_panic_handler(info)
+pub fn panic(info: &PanicInfo) -> ! {
+    panic_handler_for_tests(info)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

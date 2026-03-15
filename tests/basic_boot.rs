@@ -6,14 +6,16 @@
 
 use core::panic::PanicInfo;
 
+use BazOS::init;
+
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
+    init();
     test_main();
-
     loop {}
 }
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    BazOS::test_panic_handler(info)
+    BazOS::panic_handler_for_tests(info)
 }

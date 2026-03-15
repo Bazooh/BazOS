@@ -1,8 +1,10 @@
-use core::{fmt, panic::PanicInfo};
+use core::fmt;
 
 use lazy_static::lazy_static;
 use spin::Mutex;
 use volatile::Volatile;
+
+use crate::interrupts::without_interrupts;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -188,6 +190,26 @@ impl Writer {
             }
         }
     }
+
+    pub fn erase(&mut self) {
+        if self.column_position == 0 {
+            return;
+        }
+
+        self.column_position -= 1;
+
+        let row = BUFFER_HEIGHT - 1;
+        let col = self.column_position;
+
+        self.buffer.write(
+            row,
+            col,
+            ScreenChar {
+                ascii_character: b' ',
+                color_code: self.color_code,
+            },
+        );
+    }
 }
 
 impl fmt::Write for Writer {
@@ -199,11 +221,22 @@ impl fmt::Write for Writer {
 
 #[macro_export]
 macro_rules! fill_screen {
-    ($color:ident) => {{
-        $crate::vga::WRITER
-            .lock()
-            .fill($crate::vga::BackgroundColor::$color)
-    }};
+    ($color:ident) => {
+        $crate::interrupts::without_interrupts(|| {
+            $crate::vga::WRITER
+                .lock()
+                .fill($crate::vga::BackgroundColor::$color);
+        });
+    };
+}
+
+#[macro_export]
+macro_rules! erase {
+    () => {
+        $crate::interrupts::without_interrupts(|| {
+            $crate::vga::WRITER.lock().erase();
+        })
+    };
 }
 
 #[macro_export]
@@ -220,7 +253,9 @@ macro_rules! print {
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
-    WRITER.lock().write_fmt(args).unwrap();
+    without_interrupts(|| {
+        WRITER.lock().write_fmt(args).unwrap();
+    });
 }
 
 #[test_case]
@@ -238,9 +273,11 @@ fn test_println_many() {
 #[test_case]
 fn test_println_output() {
     let s = "Some test string that fits on a single line";
-    println!("{}", s);
-    for (i, c) in s.chars().enumerate() {
-        let screen_char = WRITER.lock().buffer.read(BUFFER_HEIGHT - 2, i);
-        assert_eq!(char::from(screen_char.ascii_character), c);
-    }
+    without_interrupts(|| {
+        println!("\n{}", s);
+        for (i, c) in s.chars().enumerate() {
+            let screen_char = WRITER.lock().buffer.read(BUFFER_HEIGHT - 2, i);
+            assert_eq!(char::from(screen_char.ascii_character), c);
+        }
+    });
 }
