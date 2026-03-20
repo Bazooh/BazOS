@@ -1,18 +1,16 @@
 #![no_std]
 #![no_main]
-#![feature(custom_test_frameworks)]
+#![feature(custom_test_frameworks, int_lowest_highest_one)]
 #![test_runner(BazOS::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
-use core::{arch::asm, panic::PanicInfo};
+extern crate alloc;
 
-use BazOS::{hlt_loop, init};
+use core::panic::PanicInfo;
+
+use BazOS::{ALLOCATOR, hlt_loop, init, memory::heap::HEAP_SIZE};
+use alloc::{boxed::Box, vec::Vec};
 use bootloader::{BootInfo, entry_point};
-use x86_64::{
-    VirtAddr,
-    instructions::interrupts::int3,
-    structures::paging::{Mapper, Translate},
-};
 
 mod gdt;
 mod interrupts;
@@ -23,23 +21,15 @@ mod vga;
 
 entry_point!(main);
 
-#[allow(unreachable_code)]
+#[allow(unreachable_code, unused_variables)]
 pub fn main(boot_info: &'static BootInfo) -> ! {
     #[cfg(test)]
     BazOS::exit_qemu(BazOS::QemuExitCode::Success);
 
-    init();
-
-    let page_table = unsafe { memory::init(boot_info.physical_memory_offset) };
+    init(boot_info);
 
     println!("It did not crash!");
-
     hlt_loop();
-}
-
-#[allow(unconditional_recursion)]
-fn stack_overflow() {
-    stack_overflow(); // for each recursion, the return address is pushed
 }
 
 #[cfg(not(test))]

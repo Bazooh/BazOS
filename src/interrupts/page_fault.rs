@@ -41,7 +41,7 @@ impl Display for PageFaultErrorCode {
 
 pub extern "C" fn page_fault_handler(stack_frame: &ExceptionStackFrame, error_code: u64) {
     println!(
-        "EXCEPTION: PAGE FAULT\n  while trying to access address {:#x}\n  with error code {}\n{:#?}",
+        "EXCEPTION: PAGE FAULT\n  while trying to access address VirtAddr({:#x})\n  with error code {}\n{:#?}",
         control::Cr2::read().unwrap(),
         PageFaultErrorCode::from_u64(error_code).unwrap(),
         stack_frame

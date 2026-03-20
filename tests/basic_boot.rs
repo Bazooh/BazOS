@@ -7,10 +7,12 @@
 use core::panic::PanicInfo;
 
 use BazOS::init;
+use bootloader::{BootInfo, entry_point};
 
-#[unsafe(no_mangle)]
-pub extern "C" fn _start() -> ! {
-    init();
+entry_point!(main);
+
+pub fn main(boot_info: &'static BootInfo) -> ! {
+    init(boot_info);
     test_main();
     loop {}
 }

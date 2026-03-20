@@ -1,9 +1,11 @@
 #![allow(non_snake_case)]
 #![no_std]
 #![cfg_attr(test, no_main)]
-#![feature(custom_test_frameworks)]
+#![feature(custom_test_frameworks, int_lowest_highest_one)]
 #![test_runner(crate::test_runner)]
 #![reexport_test_harness_main = "test_main"]
+
+extern crate alloc;
 
 use core::ops::Fn;
 use core::panic::PanicInfo;
@@ -14,13 +16,18 @@ use bootloader::entry_point;
 use x86_64::instructions::port::Port;
 
 use crate::gdt::init_gdt;
+use crate::memory::Allocator;
+use crate::memory::heap::init_heap;
 
 mod gdt;
 mod interrupts;
-mod memory;
+pub mod memory;
 mod serial;
 mod utils;
 mod vga;
+
+#[global_allocator]
+pub static ALLOCATOR: Allocator = Allocator::new();
 
 pub trait Testable {
     fn run(&self) -> ();
@@ -49,8 +56,8 @@ pub fn test_runner(tests: &[&dyn Testable]) {
 entry_point!(main);
 
 #[cfg(test)]
-pub fn main(_boot_info: &'static BootInfo) -> ! {
-    init();
+pub fn main(boot_info: &'static BootInfo) -> ! {
+    init(boot_info);
     test_main();
     hlt_loop();
 }
@@ -61,11 +68,13 @@ pub fn hlt_loop() -> ! {
     }
 }
 
-pub fn init() {
+pub fn init(boot_info: &'static BootInfo) {
     interrupts::disable();
     init_gdt();
     interrupts::init_idt();
     interrupts::enable();
+    init_heap(boot_info.physical_memory_offset, &boot_info.memory_map)
+        .expect("Heap initialization failed");
 }
 
 pub fn panic_handler_for_tests(info: &PanicInfo) -> ! {

@@ -28,7 +28,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy)]
-#[repr(C, packed)]
+#[repr(C)]
 struct Entry {
     pointer_low: u16,
     gdt_selector: SegmentSelector,
@@ -111,10 +111,7 @@ impl InteruptDescriptorTable {
 
     pub fn set_handler(&mut self, entry: u8, handler: FunctionHandler) -> &mut EntryOptions {
         self.0[entry as usize] = Entry::new(segmentation::CS::get_reg(), handler);
-        let address = &raw mut self.0[entry as usize].options;
-        // This is safe because the value is guaranteed to be 16-aligned
-        // because all fields in Entry are 16-aligned
-        unsafe { &mut *address }
+        &mut self.0[entry as usize].options
     }
 
     pub fn load(&'static self) {
@@ -147,8 +144,8 @@ macro_rules! restore_scratch_reg {
          pop r10
          pop r9
          pop r8
-         pop rsi
          pop rdi
+         pop rsi
          pop rdx
          pop rcx
          pop rax"
@@ -191,13 +188,12 @@ macro_rules! handler_with_error_code {
                 save_scratch_reg!(),
                 "mov rsi, [rsp + 8*9]
                  mov rdi, rsp
-                 add rdi, 8*10
+                 add rdi, 8*9
                  sub rsp, 8
                  call {func}
                  add rsp, 8",
                 restore_scratch_reg!(),
-                "add rsp, 8
-                 iretq",
+                "iretq",
                 func = sym $name
             );
         }
