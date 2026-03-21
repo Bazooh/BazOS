@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 #![no_std]
 #![cfg_attr(test, no_main)]
-#![feature(custom_test_frameworks, int_lowest_highest_one)]
+#![feature(custom_test_frameworks, int_lowest_highest_one, unboxed_closures)]
 #![test_runner(crate::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
@@ -16,8 +16,7 @@ use bootloader::entry_point;
 use x86_64::instructions::port::Port;
 
 use crate::gdt::init_gdt;
-use crate::memory::Allocator;
-use crate::memory::heap::init_heap;
+use crate::memory::{CompositeAllocator, init_memory};
 
 mod gdt;
 mod interrupts;
@@ -27,7 +26,7 @@ mod utils;
 mod vga;
 
 #[global_allocator]
-pub static ALLOCATOR: Allocator = Allocator::new();
+pub static ALLOCATOR: CompositeAllocator = CompositeAllocator::new();
 
 pub trait Testable {
     fn run(&self) -> ();
@@ -73,8 +72,7 @@ pub fn init(boot_info: &'static BootInfo) {
     init_gdt();
     interrupts::init_idt();
     interrupts::enable();
-    init_heap(boot_info.physical_memory_offset, &boot_info.memory_map)
-        .expect("Heap initialization failed");
+    init_memory(boot_info.physical_memory_offset, &boot_info.memory_map);
 }
 
 pub fn panic_handler_for_tests(info: &PanicInfo) -> ! {

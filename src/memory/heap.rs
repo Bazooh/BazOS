@@ -1,18 +1,46 @@
 use bootloader::bootinfo::MemoryMap;
 use x86_64::{
-    VirtAddr,
+    PhysAddr, VirtAddr,
+    registers::control::Cr3,
     structures::paging::{
-        FrameAllocator, Mapper, Page, PageTableFlags, Size4KiB, mapper::MapToError,
+        FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, Size4KiB,
+        mapper::MapToError,
     },
 };
 
 use crate::{
     ALLOCATOR,
-    memory::{frame_allocator::BootLoaderFrameAllocator, init_memory_mapper},
+    memory::{HEAP_SIZE, HEAP_START, frame_allocator::BootLoaderFrameAllocator},
 };
 
-pub const HEAP_START: usize = 0x_4444_0000_0000;
-pub const HEAP_SIZE: usize = 128 * 1024; // 128 KiB
+/// Returns a mutable reference to the active level 4 table.
+///
+/// This function is unsafe because the caller must guarantee that the
+/// complete physical memory is mapped to virtual memory at the passed
+/// `physical_memory_offset`. Also, this function must be only called once
+/// to avoid aliasing `&mut` references (which is undefined behavior).
+unsafe fn active_level_4_table(physical_memory_offset: u64) -> &'static mut PageTable {
+    let (level_4_table_frame, _) = Cr3::read();
+    let address = to_virtual_address(level_4_table_frame.start_address(), physical_memory_offset);
+    unsafe { &mut *(address.as_mut_ptr()) }
+}
+
+fn to_virtual_address(physical_address: PhysAddr, physical_memory_offset: u64) -> VirtAddr {
+    VirtAddr::new(physical_address.as_u64() + physical_memory_offset)
+}
+
+/// Initialize a new OffsetPageTable.
+///
+/// This function is unsafe because the caller must guarantee that the
+/// complete physical memory is mapped to virtual memory at the passed
+/// `physical_memory_offset`. Also, this function must be only called once
+/// to avoid aliasing `&mut` references (which is undefined behavior).
+pub unsafe fn init_memory_mapper(physical_memory_offset: u64) -> OffsetPageTable<'static> {
+    unsafe {
+        let level_4_table = active_level_4_table(physical_memory_offset);
+        OffsetPageTable::new(level_4_table, VirtAddr::new(physical_memory_offset))
+    }
+}
 
 pub fn init_heap(
     physical_memory_offset: u64,
