@@ -1,10 +1,8 @@
-use core::alloc::Layout;
-
 use spin::Mutex;
 
 use crate::memory::{FreeSpaceNode, PAGE_SIZE, binary_allocator::BinaryAllocator};
 
-const MINIMUM_BLOCK_SIZE: usize = size_of::<FreeSpaceNode>();
+pub const MINIMUM_BLOCK_SIZE: usize = size_of::<FreeSpaceNode>();
 const SLAB_SIZE: usize = PAGE_SIZE;
 const MAX_DEPTH: usize = (SLAB_SIZE / MINIMUM_BLOCK_SIZE).lowest_one().unwrap() as usize + 1;
 
@@ -33,10 +31,7 @@ impl<NewSlabAllocator: BinaryAllocator> SlabAllocator<NewSlabAllocator> {
     }
 
     fn allocate_new_slab(&mut self, size: usize) -> Option<&'static mut FreeSpaceNode> {
-        let ptr = self
-            .new_slab_allocator()
-            .lock()
-            .alloc(Layout::from_size_align(SLAB_SIZE, SLAB_SIZE).expect("Alignement is wrong"))?;
+        let ptr = self.new_slab_allocator().lock().alloc(SLAB_SIZE)?;
 
         let mut root = None;
         let mut ptr = ptr as *mut FreeSpaceNode;
@@ -54,11 +49,9 @@ impl<NewSlabAllocator: BinaryAllocator> SlabAllocator<NewSlabAllocator> {
 }
 
 impl<NewSlabAllocator: BinaryAllocator> BinaryAllocator for SlabAllocator<NewSlabAllocator> {
-    fn alloc(&mut self, layout: Layout) -> Option<*mut u8> {
-        let size = layout.size().max(layout.align());
-
+    fn alloc(&mut self, size: usize) -> Option<*mut u8> {
         if size >= PAGE_SIZE {
-            return self.new_slab_allocator().lock().alloc(layout);
+            return self.new_slab_allocator().lock().alloc(size);
         }
 
         let depth = self.compute_depth(size)?;
@@ -69,11 +62,9 @@ impl<NewSlabAllocator: BinaryAllocator> BinaryAllocator for SlabAllocator<NewSla
         Some(slab as *mut FreeSpaceNode as *mut u8)
     }
 
-    fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
-        let size = layout.size().max(layout.align());
-
+    fn dealloc(&mut self, ptr: *mut u8, size: usize) {
         if size >= PAGE_SIZE {
-            return self.new_slab_allocator().lock().dealloc(ptr, layout);
+            return self.new_slab_allocator().lock().dealloc(ptr, size);
         }
 
         let ptr = ptr as *mut FreeSpaceNode;

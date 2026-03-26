@@ -15,9 +15,12 @@ use bootloader::BootInfo;
 use bootloader::entry_point;
 use x86_64::instructions::port::Port;
 
+use crate::r#async::executor::Executor;
+use crate::r#async::init_tasks;
 use crate::gdt::init_gdt;
 use crate::memory::{CompositeAllocator, init_memory};
 
+mod r#async;
 mod gdt;
 mod interrupts;
 pub mod memory;
@@ -71,14 +74,19 @@ pub fn init(boot_info: &'static BootInfo) {
     interrupts::disable();
     init_gdt();
     interrupts::init_idt();
-    interrupts::enable();
     init_memory(boot_info.physical_memory_offset, &boot_info.memory_map);
+    init_tasks();
+    interrupts::enable();
 }
 
 pub fn panic_handler_for_tests(info: &PanicInfo) -> ! {
     serial_println!("[failed]\n");
     serial_println!("Error: {}\n", info);
     exit_qemu(QemuExitCode::Failed);
+}
+
+pub fn run_executor() -> ! {
+    Executor::kernel();
 }
 
 #[cfg(test)]

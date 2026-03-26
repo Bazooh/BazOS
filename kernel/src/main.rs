@@ -8,10 +8,10 @@ extern crate alloc;
 
 use core::panic::PanicInfo;
 
-use BazOS::{ALLOCATOR, hlt_loop, init};
-use alloc::vec::Vec;
+use BazOS::{ALLOCATOR, hlt_loop, init, run_executor};
 use bootloader::{BootInfo, entry_point};
 
+mod r#async;
 mod gdt;
 mod interrupts;
 mod memory;
@@ -28,19 +28,7 @@ pub fn main(boot_info: &'static BootInfo) -> ! {
 
     init(boot_info);
 
-    large_vec();
-
-    println!("It did not crash!");
-    hlt_loop();
-}
-
-fn large_vec() {
-    let n = 1000;
-    let mut vec = Vec::new();
-    for i in 0..n {
-        vec.push(i);
-    }
-    assert_eq!(vec.iter().sum::<u64>(), (n - 1) * n / 2);
+    run_executor();
 }
 
 #[cfg(not(test))]

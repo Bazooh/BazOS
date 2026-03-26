@@ -6,8 +6,9 @@ use core::{
 use spin::Mutex;
 
 use crate::memory::{
-    binary_allocator::BinaryAllocator, buddy_allocator::BuddyAllocator,
-    slab_allocator::SlabAllocator,
+    binary_allocator::BinaryAllocator,
+    buddy_allocator::BuddyAllocator,
+    slab_allocator::{MINIMUM_BLOCK_SIZE, SlabAllocator},
 };
 
 pub struct CompositeAllocator {
@@ -26,17 +27,27 @@ impl CompositeAllocator {
         buddy_allocator.init();
         self.slab_allocator.lock().init(buddy_allocator);
     }
+
+    fn compute_size(layout: Layout) -> usize {
+        layout
+            .size()
+            .max(layout.align())
+            .max(MINIMUM_BLOCK_SIZE)
+            .next_power_of_two()
+    }
 }
 
 unsafe impl GlobalAlloc for CompositeAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        match self.slab_allocator.lock().alloc(layout) {
+        let size = CompositeAllocator::compute_size(layout);
+        match self.slab_allocator.lock().alloc(size) {
             Some(ptr) => ptr,
             None => null_mut(),
         }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        self.slab_allocator.lock().dealloc(ptr, layout);
+        let size = CompositeAllocator::compute_size(layout);
+        self.slab_allocator.lock().dealloc(ptr, size);
     }
 }

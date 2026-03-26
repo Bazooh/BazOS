@@ -1,5 +1,3 @@
-use core::alloc::Layout;
-
 use crate::memory::{
     FreeSpaceNode, HEAP_SIZE, HEAP_START, PAGE_SIZE, binary_allocator::BinaryAllocator,
 };
@@ -150,16 +148,14 @@ impl BuddyAllocator {
 }
 
 impl BinaryAllocator for BuddyAllocator {
-    fn alloc(&mut self, layout: Layout) -> Option<*mut u8> {
-        let size = layout.size().max(layout.align());
+    fn alloc(&mut self, size: usize) -> Option<*mut u8> {
         let depth = self.compute_depth(size)?;
         Some(self.take_or_divide(depth)? as *mut FreeSpaceNode as *mut u8)
     }
 
-    fn dealloc(&mut self, ptr: *mut u8, layout: Layout) {
-        let size = layout.size().max(layout.align());
-        let depth = self.compute_depth(size);
-        self.merge(depth.unwrap(), ptr as *mut FreeSpaceNode);
+    fn dealloc(&mut self, ptr: *mut u8, size: usize) {
+        let depth = self.compute_depth(size).unwrap();
+        self.merge(depth, ptr as *mut FreeSpaceNode);
     }
 
     fn minimum_block_size(&self) -> usize {
