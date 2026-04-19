@@ -1,3 +1,5 @@
+use core::alloc::Layout;
+
 /// An allocator that can only allocate memory sizes that are a power of 2
 pub trait BinaryAllocator {
     fn alloc(&mut self, size: usize) -> Option<*mut u8>;
@@ -30,5 +32,13 @@ pub trait BinaryAllocator {
             }
             None => Some(max_depth_inclusive),
         }
+    }
+
+    fn compute_size(&self, layout: Layout) -> usize {
+        layout
+            .size()
+            .max(layout.align())
+            .max(self.minimum_block_size())
+            .next_power_of_two()
     }
 }

@@ -59,6 +59,11 @@ impl ColorCode {
         let background = self.0 & 0b0111_0000;
         unsafe { core::mem::transmute(background) }
     }
+
+    fn foreground(&self) -> ForegroundColor {
+        let foreground = self.0 & 0b0000_1111;
+        unsafe { core::mem::transmute(foreground) }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -234,7 +239,7 @@ macro_rules! fill_screen {
 macro_rules! erase {
     () => {
         $crate::interrupts::without_interrupts(|| {
-            $crate::vga::WRITER.lock().erase();
+            $crate::out::vga::WRITER.lock().erase();
         })
     };
 }
@@ -247,14 +252,29 @@ macro_rules! println {
 
 #[macro_export]
 macro_rules! print {
-    ($($arg:tt)*) => ($crate::vga::_print(format_args!($($arg)*)));
+    ($($arg:tt)*) => ($crate::out::vga::_print(format_args!($($arg)*), $crate::out::vga::ForegroundColor::White));
+}
+
+#[macro_export]
+macro_rules! eprintln {
+    () => ($crate::eprint!("\n"));
+    ($($arg:tt)*) => ($crate::eprint!("{}\n", format_args!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! eprint {
+    ($($arg:tt)*) => ($crate::out::vga::_print(format_args!($($arg)*), $crate::out::vga::ForegroundColor::Red));
 }
 
 #[doc(hidden)]
-pub fn _print(args: fmt::Arguments) {
+pub fn _print(args: fmt::Arguments, foreground: ForegroundColor) {
     use core::fmt::Write;
     without_interrupts(|| {
-        WRITER.lock().write_fmt(args).unwrap();
+        let mut writer = WRITER.lock();
+        let old_color = writer.color_code.foreground();
+        writer.color_code = ColorCode::new(foreground, writer.color_code.background());
+        writer.write_fmt(args).unwrap();
+        writer.color_code = ColorCode::new(old_color, writer.color_code.background());
     });
 }
 

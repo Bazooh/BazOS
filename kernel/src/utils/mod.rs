@@ -1,2 +1,2 @@
 pub mod debug;
-pub mod tree;
+pub mod interval;

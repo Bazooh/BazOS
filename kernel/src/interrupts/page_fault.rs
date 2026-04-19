@@ -1,4 +1,4 @@
-use core::fmt::Display;
+use core::{arch::asm, fmt::Display};
 
 use bit_field::BitField;
 use x86_64::{instructions::interrupts::int3, registers::control};
@@ -40,8 +40,12 @@ impl Display for PageFaultErrorCode {
 }
 
 pub extern "C" fn page_fault_handler(stack_frame: &ExceptionStackFrame, error_code: u64) {
+    let r15: usize;
+    unsafe {
+        asm!("mov {}, r15", out(reg) r15);
+    }
     println!(
-        "EXCEPTION: PAGE FAULT\n  while trying to access address VirtAddr({:#x})\n  with error code {}\n{:#?}",
+        "EXCEPTION: PAGE FAULT\n  while trying to access address VirtAddr({:#x})\n  with error code {}\n{:#?}\nr15: {r15:x}",
         control::Cr2::read().unwrap(),
         PageFaultErrorCode::from_u64(error_code).unwrap(),
         stack_frame

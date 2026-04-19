@@ -6,16 +6,15 @@ use core::{
 use spin::Mutex;
 
 use crate::memory::{
-    binary_allocator::BinaryAllocator,
-    buddy_allocator::BuddyAllocator,
-    slab_allocator::{MINIMUM_BLOCK_SIZE, SlabAllocator},
+    HEAP_SIZE, HEAP_START, PAGE_SIZE, binary_allocator::BinaryAllocator,
+    buddy_allocator::BuddyAllocator, slab_allocator::SlabAllocator,
 };
 
-pub struct CompositeAllocator {
-    slab_allocator: Mutex<SlabAllocator<BuddyAllocator>>,
+pub struct CompositeAllocator<const MAX_DEPTH: usize> {
+    slab_allocator: Mutex<SlabAllocator<BuddyAllocator<MAX_DEPTH>>>,
 }
 
-impl CompositeAllocator {
+impl<const MAX_DEPTH: usize> CompositeAllocator<MAX_DEPTH> {
     pub const fn new() -> Self {
         CompositeAllocator {
             slab_allocator: Mutex::new(SlabAllocator::new()),
@@ -23,23 +22,16 @@ impl CompositeAllocator {
     }
 
     pub fn init(&self) {
-        let mut buddy_allocator = BuddyAllocator::new();
+        let mut buddy_allocator =
+            BuddyAllocator::<MAX_DEPTH>::new(HEAP_SIZE, PAGE_SIZE, HEAP_START);
         buddy_allocator.init();
         self.slab_allocator.lock().init(buddy_allocator);
     }
-
-    fn compute_size(layout: Layout) -> usize {
-        layout
-            .size()
-            .max(layout.align())
-            .max(MINIMUM_BLOCK_SIZE)
-            .next_power_of_two()
-    }
 }
 
-unsafe impl GlobalAlloc for CompositeAllocator {
+unsafe impl<const MAX_DEPTH: usize> GlobalAlloc for CompositeAllocator<MAX_DEPTH> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let size = CompositeAllocator::compute_size(layout);
+        let size = self.slab_allocator.lock().compute_size(layout);
         match self.slab_allocator.lock().alloc(size) {
             Some(ptr) => ptr,
             None => null_mut(),
@@ -47,7 +39,7 @@ unsafe impl GlobalAlloc for CompositeAllocator {
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        let size = CompositeAllocator::compute_size(layout);
+        let size = self.slab_allocator.lock().compute_size(layout);
         self.slab_allocator.lock().dealloc(ptr, size);
     }
 }

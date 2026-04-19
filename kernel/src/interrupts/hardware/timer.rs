@@ -1,10 +1,5 @@
-use crate::{
-    interrupts::{
-        hardware::{HardwareInterrupt, PICS},
-        idt::ExceptionStackFrame,
-    },
-    println,
-};
+use super::{HardwareInterrupt, PICS};
+use crate::interrupts::idt::ExceptionStackFrame;
 
 pub extern "C" fn timer_handler(_stack_frame: &ExceptionStackFrame) {
     unsafe {

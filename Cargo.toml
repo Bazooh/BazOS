@@ -1,4 +1,7 @@
 [workspace]
 members = [
-    "kernel"
+    "kernel",
+    "std",
+    "user/hello_world",
+    "xtask",
 ]

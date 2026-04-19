@@ -3,15 +3,8 @@ use pc_keyboard::{DecodedKey, KeyCode, Keyboard, ScancodeSet1, ScancodeSet2, lay
 use spin::Mutex;
 use x86_64::instructions::port::Port;
 
-use crate::{
-    r#async::SCANCODE_STREAMER,
-    erase,
-    interrupts::{
-        hardware::{HardwareInterrupt, PICS},
-        idt::ExceptionStackFrame,
-    },
-    print,
-};
+use super::{HardwareInterrupt, PICS};
+use crate::{r#async::SCANCODE_STREAMER, interrupts::idt::ExceptionStackFrame};
 
 pub extern "C" fn keyboard_handler(_stack_frame: &ExceptionStackFrame) {
     let mut port = Port::new(0x60);

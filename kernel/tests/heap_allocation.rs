@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(custom_test_frameworks)]
-#![test_runner(BazOS::test_runner)]
+#![test_runner(std::tests::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
 extern crate alloc;
@@ -10,19 +10,14 @@ use BazOS::{init, memory::HEAP_SIZE};
 use alloc::{boxed::Box, vec::Vec};
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
+use std::hlt_loop;
 
 entry_point!(main);
 
 pub fn main(boot_info: &'static BootInfo) -> ! {
     init(boot_info);
-
     test_main();
-    loop {}
-}
-
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    BazOS::panic_handler_for_tests(info)
+    hlt_loop();
 }
 
 #[test_case]

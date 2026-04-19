@@ -1,58 +1,41 @@
 #![allow(non_snake_case)]
 #![no_std]
-#![cfg_attr(test, no_main)]
-#![feature(custom_test_frameworks, int_lowest_highest_one, unboxed_closures)]
-#![test_runner(crate::test_runner)]
+#![no_main]
+#![feature(
+    allocator_api,
+    custom_test_frameworks,
+    int_lowest_highest_one,
+    unboxed_closures
+)]
+#![test_runner(std::tests::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
 extern crate alloc;
 
-use core::ops::Fn;
-use core::panic::PanicInfo;
+use alloc::{format, string::String, vec::Vec};
+use core::str::from_utf8;
+#[cfg(test)]
+use std::hlt_loop;
+use std::serial_println;
 
 use bootloader::BootInfo;
 #[cfg(test)]
 use bootloader::entry_point;
-use x86_64::instructions::port::Port;
 
 use crate::r#async::executor::Executor;
-use crate::r#async::init_tasks;
+use crate::r#async::init_async;
 use crate::gdt::init_gdt;
-use crate::memory::{CompositeAllocator, init_memory};
+use crate::memory::init_memory;
 
-mod r#async;
+pub mod r#async;
+pub mod fs;
 mod gdt;
 mod interrupts;
+pub mod io;
 pub mod memory;
-mod serial;
+pub mod out;
+pub mod program;
 mod utils;
-mod vga;
-
-#[global_allocator]
-pub static ALLOCATOR: CompositeAllocator = CompositeAllocator::new();
-
-pub trait Testable {
-    fn run(&self) -> ();
-}
-
-impl<T> Testable for T
-where
-    T: Fn(),
-{
-    fn run(&self) {
-        serial_print!("{}...\t", core::any::type_name::<T>());
-        self();
-        serial_println!("[ok]");
-    }
-}
-
-pub fn test_runner(tests: &[&dyn Testable]) {
-    serial_println!("Running {} tests", tests.len());
-    for test in tests {
-        test.run();
-    }
-    exit_qemu(QemuExitCode::Success);
-}
 
 #[cfg(test)]
 entry_point!(main);
@@ -60,14 +43,9 @@ entry_point!(main);
 #[cfg(test)]
 pub fn main(boot_info: &'static BootInfo) -> ! {
     init(boot_info);
+    serial_println!("Tst");
     test_main();
     hlt_loop();
-}
-
-pub fn hlt_loop() -> ! {
-    loop {
-        x86_64::instructions::hlt();
-    }
 }
 
 pub fn init(boot_info: &'static BootInfo) {
@@ -75,37 +53,38 @@ pub fn init(boot_info: &'static BootInfo) {
     init_gdt();
     interrupts::init_idt();
     init_memory(boot_info.physical_memory_offset, &boot_info.memory_map);
-    init_tasks();
+    init_async();
     interrupts::enable();
+    io::device::init();
 }
 
-pub fn panic_handler_for_tests(info: &PanicInfo) -> ! {
-    serial_println!("[failed]\n");
-    serial_println!("Error: {}\n", info);
-    exit_qemu(QemuExitCode::Failed);
-}
-
-pub fn run_executor() -> ! {
-    Executor::kernel();
-}
-
-#[cfg(test)]
-#[panic_handler]
-pub fn panic(info: &PanicInfo) -> ! {
-    panic_handler_for_tests(info)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u32)]
-pub enum QemuExitCode {
-    Success = 0x10,
-    Failed = 0x11,
-}
-
-pub fn exit_qemu(exit_code: QemuExitCode) -> ! {
-    let mut port = Port::new(0xf4);
-    unsafe {
-        port.write(exit_code as u32);
+pub fn print_data(data: &[u8]) {
+    let address = data.as_ptr() as u64;
+    for (i, line) in data.chunks(16).enumerate() {
+        serial_println!(
+            "0x{}:  {:<47}  |{:<16}|",
+            format!("{:#018x}", address + i as u64 * 16)[2..]
+                .as_bytes()
+                .rchunks(4)
+                .rev()
+                .map(|c| from_utf8(c).unwrap())
+                .collect::<Vec<_>>()
+                .join("_"),
+            line.chunks(8)
+                .map(|g| {
+                    g.iter()
+                        .map(|x| format!("{x:02x}"))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .collect::<Vec<_>>()
+                .join("  "),
+            line.iter()
+                .map(|x| match *x {
+                    0x20..=0x7e => char::from(*x),
+                    _ => '.',
+                })
+                .collect::<String>()
+        );
     }
-    loop {}
 }

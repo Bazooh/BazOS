@@ -1,26 +1,38 @@
+use core::ptr::null_mut;
+
 use crate::memory::{
-    FreeSpaceNode, HEAP_SIZE, HEAP_START, PAGE_SIZE, binary_allocator::BinaryAllocator,
+    FreeSpaceNode, HEAP_SIZE, HEAP_START, PAGE_SIZE,
+    binary_allocator::BinaryAllocator,
+    program_allocator::{PROGRAM_SIZE, PROGRAM_START},
 };
 
-const MINIMUM_BLOCK_SIZE: usize = PAGE_SIZE;
-const MAX_DEPTH: usize = (HEAP_SIZE / MINIMUM_BLOCK_SIZE).lowest_one().unwrap() as usize + 1;
-const DEPTH_OFFSET: usize = HEAP_SIZE.lowest_one().unwrap() as usize;
-
-pub struct BuddyAllocator {
-    nodes: [Option<&'static mut FreeSpaceNode>; MAX_DEPTH as usize],
+pub struct BuddyAllocator<const MAX_DEPTH: usize> {
+    nodes: [Option<&'static mut FreeSpaceNode>; MAX_DEPTH],
+    minimum_block_size: usize,
+    depth_offset: usize,
+    mem_start: usize,
 }
 
-impl BuddyAllocator {
-    pub const fn new() -> BuddyAllocator {
+pub const fn compute_max_depth(size: usize, minimum_block_size: usize) -> usize {
+    (size / minimum_block_size).lowest_one().unwrap() as usize + 1
+}
+
+impl<const MAX_DEPTH: usize> BuddyAllocator<MAX_DEPTH> {
+    pub const fn new(size: usize, minimum_block_size: usize, mem_start: usize) -> Self {
+        assert!(size.is_power_of_two());
+        assert!(MAX_DEPTH == compute_max_depth(size, minimum_block_size));
+
         const EMPTY: Option<&'static mut FreeSpaceNode> = None;
         BuddyAllocator {
-            nodes: [EMPTY; MAX_DEPTH as usize],
+            nodes: [EMPTY; MAX_DEPTH],
+            minimum_block_size,
+            depth_offset: size.lowest_one().unwrap() as usize,
+            mem_start,
         }
     }
 
     pub fn init(&mut self) {
-        assert!(HEAP_SIZE.is_power_of_two());
-        let ptr = HEAP_START as *mut FreeSpaceNode;
+        let ptr = self.mem_start as *mut FreeSpaceNode;
         unsafe {
             ptr.write(FreeSpaceNode::new());
             self.nodes[0] = Some(&mut *ptr);
@@ -36,7 +48,7 @@ impl BuddyAllocator {
             return None;
         }
 
-        unsafe { Some(ptr.byte_add(1 << (DEPTH_OFFSET - depth))) }
+        unsafe { Some(ptr.byte_add(1 << (self.depth_offset - depth))) }
     }
 
     fn compute_left_buddy_ptr(
@@ -48,7 +60,7 @@ impl BuddyAllocator {
             return None;
         }
 
-        unsafe { Some(ptr.byte_sub(1 << (DEPTH_OFFSET - depth))) }
+        unsafe { Some(ptr.byte_sub(1 << (self.depth_offset - depth))) }
     }
 
     fn compute_buddy_ptr(
@@ -69,7 +81,7 @@ impl BuddyAllocator {
     }
 
     fn is_left(&self, depth: usize, ptr: *const FreeSpaceNode) -> bool {
-        (ptr as usize - HEAP_START) & (1 << (DEPTH_OFFSET - depth)) == 0
+        (ptr as usize - self.mem_start) & (1 << (self.depth_offset - depth)) == 0
     }
 
     fn take_or_divide(&mut self, depth: usize) -> Option<&'static mut FreeSpaceNode> {
@@ -147,7 +159,7 @@ impl BuddyAllocator {
     }
 }
 
-impl BinaryAllocator for BuddyAllocator {
+impl<const MAX_DEPTH: usize> BinaryAllocator for BuddyAllocator<MAX_DEPTH> {
     fn alloc(&mut self, size: usize) -> Option<*mut u8> {
         let depth = self.compute_depth(size)?;
         Some(self.take_or_divide(depth)? as *mut FreeSpaceNode as *mut u8)
@@ -159,7 +171,7 @@ impl BinaryAllocator for BuddyAllocator {
     }
 
     fn minimum_block_size(&self) -> usize {
-        MINIMUM_BLOCK_SIZE
+        self.minimum_block_size
     }
 
     fn max_depth(&self) -> usize {

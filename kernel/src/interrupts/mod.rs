@@ -9,6 +9,7 @@ mod double_fault;
 mod hardware;
 mod invalid_opcode;
 mod page_fault;
+mod syscall;
 
 #[allow(unused)]
 #[inline]

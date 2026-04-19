@@ -15,16 +15,18 @@ use x86_64::{
 };
 
 use crate::{
-    interrupts::{
-        breakpoint::breakpoint_handler,
-        divide_by_zero::divide_by_zero_handler,
-        double_fault::double_fault_handler,
-        hardware::{HardwareInterrupt, PICS, keyboard::keyboard_handler, timer::timer_handler},
-        invalid_opcode::invalid_opcode_handler,
-        page_fault::page_fault_handler,
-    },
-    println,
+    r#async::thread::Thread,
+    interrupts::syscall::{SyscallNumber, syscall_handler},
     utils::debug::DebugHex,
+};
+
+use super::{
+    breakpoint::breakpoint_handler,
+    divide_by_zero::divide_by_zero_handler,
+    double_fault::double_fault_handler,
+    hardware::{HardwareInterrupt, PICS, keyboard::keyboard_handler, timer::timer_handler},
+    invalid_opcode::invalid_opcode_handler,
+    page_fault::page_fault_handler,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -102,11 +104,11 @@ impl EntryOptions {
 
 type FunctionHandler = extern "C" fn() -> !;
 
-struct InteruptDescriptorTable([Entry; 64]);
+struct InteruptDescriptorTable([Entry; 256]);
 
 impl InteruptDescriptorTable {
     pub fn new() -> InteruptDescriptorTable {
-        InteruptDescriptorTable([Entry::missing(); 64])
+        InteruptDescriptorTable([Entry::missing(); 256])
     }
 
     pub fn set_handler(&mut self, entry: u8, handler: FunctionHandler) -> &mut EntryOptions {
@@ -201,14 +203,43 @@ macro_rules! handler_with_error_code {
     }};
 }
 
+type SyscallHandler =
+    extern "C" fn(usize, usize, usize, SyscallNumber, ExceptionStackFrame) -> isize;
+
+macro_rules! handler_for_syscall {
+    ($name: ident) => {{
+        // Ensure type safety
+        $name as SyscallHandler;
+
+        #[unsafe(naked)]
+        extern "C" fn wrapper() -> ! {
+            naked_asm!(
+                crate::checkpoint!(),
+                "sub rsp, 8
+                 mov rcx, rax
+                 mov r8, rsp
+                 add r8, 8
+                 call {func}
+                 add rsp, 8
+                 push rax",
+                crate::restore!(),
+                "pop rax
+                 iretq",
+                func = sym $name
+            );
+        }
+        wrapper
+    }};
+}
+
 #[derive(Debug)]
 #[repr(C)]
 pub struct ExceptionStackFrame {
     pub instruction_pointer: VirtAddr,
-    code_segment: u64,
+    code_segment: DebugHex<u64>,
     cpu_flags: DebugHex<u64>,
     stack_pointer: VirtAddr,
-    stack_segment: u64,
+    stack_segment: DebugHex<u64>,
 }
 
 lazy_static! {
@@ -225,6 +256,7 @@ lazy_static! {
             HardwareInterrupt::Keyboard as u8,
             handler!(keyboard_handler),
         );
+        idt.set_handler(0x80, handler_for_syscall!(syscall_handler));
         idt
     };
 }

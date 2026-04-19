@@ -1,46 +1,47 @@
 #![no_std]
 #![no_main]
-#![feature(custom_test_frameworks, int_lowest_highest_one, unboxed_closures)]
-#![test_runner(BazOS::test_runner)]
+#![feature(custom_test_frameworks)]
+#![test_runner(std::tests::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
 extern crate alloc;
 
-use core::panic::PanicInfo;
+use core::arch::asm;
+#[cfg(test)]
+use std::qemu::exit;
+use std::serial_println;
 
-use BazOS::{ALLOCATOR, hlt_loop, init, run_executor};
-use bootloader::{BootInfo, entry_point};
+use BazOS::{
+    r#async::scheduler::Scheduler,
+    fs::{driver::DiskDriver, elf::header::ElfHeader, file::File, path::Path},
+    init,
+    io::disk::driver::DISK_DRIVER,
+    memory::MEMORY_MAPPER,
+    print_data,
+    program::executor::ProgramExecutor,
+};
+use alloc::vec::Vec;
+use bootloader::{BootInfo, bootinfo::MemoryRegionType, entry_point};
 
-mod r#async;
-mod gdt;
-mod interrupts;
-mod memory;
-mod serial;
-mod utils;
-mod vga;
+use BazOS::r#async::executor::Executor;
+use x86_64::{VirtAddr, structures::paging::Translate};
 
 entry_point!(main);
 
-#[allow(unreachable_code, unused_variables)]
 pub fn main(boot_info: &'static BootInfo) -> ! {
     #[cfg(test)]
-    BazOS::exit_qemu(BazOS::QemuExitCode::Success);
+    exit(std::qemu::ExitCode::Success);
 
     init(boot_info);
 
-    run_executor();
-}
+    let file = DISK_DRIVER
+        .try_get()
+        .unwrap()
+        .open(Path::new("hello_world"))
+        .unwrap();
 
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    // fill_screen!(Blue);
-    println!("{}", info);
-    hlt_loop();
-}
+    ProgramExecutor::execute(file);
 
-#[cfg(test)]
-#[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
-    hlt_loop();
+    Scheduler::get().run();
+    // Executor::kernel();
 }

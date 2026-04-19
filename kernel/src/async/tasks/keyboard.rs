@@ -4,7 +4,9 @@ use lazy_static::lazy_static;
 use pc_keyboard::{DecodedKey, Keyboard, ScancodeSet1, layouts};
 use spin::Mutex;
 
-use crate::{r#async::tasks::stream::Streamer, erase, print};
+use crate::{erase, print};
+
+use super::stream::Streamer;
 
 lazy_static! {
     static ref KEYBOARD: Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> =

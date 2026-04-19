@@ -4,12 +4,11 @@ use alloc::{collections::BTreeMap, sync::Arc};
 use crossbeam_queue::ArrayQueue;
 use x86_64::instructions::hlt;
 
-use crate::{
-    r#async::{
-        task::{Task, TaskId},
-        tasks::keyboard::handle_keyboard_interrupt,
-    },
-    println,
+use crate::println;
+
+use super::{
+    task::{Task, TaskId},
+    tasks::keyboard::handle_keyboard_interrupt,
 };
 
 pub struct Executor {

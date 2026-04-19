@@ -1,43 +1,71 @@
-use core::mem::MaybeUninit;
+use core::{
+    arch::{asm, naked_asm},
+    fmt::{Debug, Formatter},
+    mem::MaybeUninit,
+    ptr::slice_from_raw_parts,
+};
+use std::serial_println;
 
-use alloc::boxed::Box;
+use alloc::{boxed::Box, string::String};
+use x86_64::{
+    PhysAddr, VirtAddr,
+    registers::control::{Cr3, Cr3Flags},
+    structures::paging::{OffsetPageTable, PageTable, PhysFrame, Translate},
+};
 
-use crate::r#async::{scheduler::Scheduler, thread::Thread};
+use crate::{
+    r#async::{scheduler::Scheduler, thread::Thread},
+    memory::{MEMORY_MAPPER, PAGE_SIZE},
+    print_data,
+};
 
 pub struct Process {
-    pid: u32,
-    parent_pid: u32,
-    name: &'static str,
-    main_thread: Thread,
-
-    code: *const (),
-    data: *const (),
-    stack: *const (),
+    pid: u64,
+    parent_pid: u64,
+    name: String,
+    page_table_frame: PhysFrame,
+    entry_point: VirtAddr,
 }
 
-pub const STACK_SIZE: usize = 4096 * 5;
+impl Debug for Process {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("MyStruct")
+            .field("pid", &self.pid)
+            .field("parent_pid", &self.parent_pid)
+            .field("name", &self.name)
+            .finish()
+    }
+}
 
 impl Process {
-    fn new(name: &'static str, parent_pid: u32, entry_point: fn()) -> Process {
-        let pid = Scheduler::next_pid();
-        let main_thread = Thread::new(entry_point);
-
-        let stack: Box<[MaybeUninit<u8>; STACK_SIZE]> =
-            Box::new([MaybeUninit::uninit(); STACK_SIZE]);
-
+    pub fn new(
+        name: String,
+        parent_pid: u64,
+        entry_point: VirtAddr,
+        page_table_frame: PhysFrame,
+    ) -> Process {
         Process {
-            pid,
+            pid: Scheduler::get().next_pid(),
             parent_pid,
             name,
-            main_thread,
-            code: 0 as *const (),
-            data: 0 as *const (),
-            stack: stack.as_ptr() as *const (),
+            page_table_frame,
+            entry_point,
         }
     }
 
-    pub fn create(name: &'static str, parent_pid: u32, entry_point: fn()) {
-        let process = Process::new(name, parent_pid, entry_point);
-        // Scheduler::add_process(process);
+    pub fn create_main_thread(&self) -> Thread {
+        Thread::new(
+            self.pid,
+            self.page_table_frame.start_address(),
+            self.entry_point,
+        )
+    }
+
+    pub fn pid(&self) -> u64 {
+        self.pid
+    }
+
+    pub fn page_table_addr(&self) -> PhysAddr {
+        self.page_table_frame.start_address()
     }
 }

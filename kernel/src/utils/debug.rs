@@ -3,6 +3,7 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
+#[repr(transparent)]
 pub struct DebugHex<T>(T);
 
 impl<T: LowerHex> Debug for DebugHex<T> {
