@@ -4,7 +4,7 @@ use crate::{eprintln, print};
 
 pub fn out_handler(ptr: *const u8, len: usize) -> isize {
     let bytes = unsafe { core::slice::from_raw_parts(ptr, len) };
-    return match from_utf8(bytes) {
+    match from_utf8(bytes) {
         Ok(string) => {
             print!("{string}");
             0
@@ -13,5 +13,5 @@ pub fn out_handler(ptr: *const u8, len: usize) -> isize {
             eprintln!("{err}");
             -1
         }
-    };
+    }
 }

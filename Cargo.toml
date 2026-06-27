@@ -5,3 +5,4 @@ members = [
     "user/hello_world",
     "xtask",
 ]
+resolver = "3"

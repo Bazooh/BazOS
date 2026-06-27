@@ -1,3 +1,4 @@
+use alloc::vec;
 use core::{
     alloc::{GlobalAlloc, Layout},
     ptr::NonNull,
@@ -20,8 +21,6 @@ unsafe impl Hal for HalImpl {
         let layout = Layout::array::<u8>(pages * PAGE_SIZE).unwrap();
         let virt_ptr = unsafe { HEAP.alloc_zeroed(layout) };
         let phys_addr = MEMORY_MAPPER
-            .try_get()
-            .expect("Heap not initialized")
             .translate_addr(VirtAddr::from_ptr(virt_ptr))
             .expect("Translation failed");
 
@@ -45,15 +44,8 @@ unsafe impl Hal for HalImpl {
 
     unsafe fn mmio_phys_to_virt(paddr: virtio_drivers::PhysAddr, _size: usize) -> NonNull<u8> {
         NonNull::new(
-            to_virtual_address(
-                PhysAddr::new(paddr),
-                MEMORY_MAPPER
-                    .try_get()
-                    .expect("Heap not initialized")
-                    .phys_offset()
-                    .as_u64(),
-            )
-            .as_mut_ptr(),
+            to_virtual_address(PhysAddr::new(paddr), MEMORY_MAPPER.phys_offset().as_u64())
+                .as_mut_ptr(),
         )
         .expect("Address is null")
     }
@@ -63,8 +55,6 @@ unsafe impl Hal for HalImpl {
         _direction: BufferDirection,
     ) -> virtio_drivers::PhysAddr {
         MEMORY_MAPPER
-            .try_get()
-            .expect("Heap not initialized")
             .translate_addr(VirtAddr::from_ptr(buffer.as_ptr()))
             .expect("Buffer is not in memory")
             .as_u64()

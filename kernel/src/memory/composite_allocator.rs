@@ -1,10 +1,12 @@
+use core::alloc::{AllocError, Allocator};
+use core::ptr::{NonNull, slice_from_raw_parts_mut};
 use core::{
     alloc::{GlobalAlloc, Layout},
     ptr::null_mut,
 };
-
 use spin::Mutex;
 
+use crate::memory::program_allocator::ProgramAllocator;
 use crate::memory::{
     HEAP_SIZE, HEAP_START, PAGE_SIZE, binary_allocator::BinaryAllocator,
     buddy_allocator::BuddyAllocator, slab_allocator::SlabAllocator,
@@ -32,10 +34,10 @@ impl<const MAX_DEPTH: usize> CompositeAllocator<MAX_DEPTH> {
 unsafe impl<const MAX_DEPTH: usize> GlobalAlloc for CompositeAllocator<MAX_DEPTH> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let size = self.slab_allocator.lock().compute_size(layout);
-        match self.slab_allocator.lock().alloc(size) {
-            Some(ptr) => ptr,
-            None => null_mut(),
-        }
+        self.slab_allocator
+            .lock()
+            .alloc(size)
+            .unwrap_or_else(|| null_mut())
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {

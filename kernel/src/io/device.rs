@@ -64,11 +64,7 @@ pub fn init() {
     let config = acpi.find_table::<Mcfg>().unwrap().entries()[0];
     let address = to_virtual_address(
         PhysAddr::new(config.base_address),
-        MEMORY_MAPPER
-            .try_get()
-            .expect("Heap not initialized")
-            .phys_offset()
-            .as_u64(),
+        MEMORY_MAPPER.phys_offset().as_u64(),
     );
 
     let mut pci = unsafe {

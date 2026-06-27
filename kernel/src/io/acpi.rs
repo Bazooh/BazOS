@@ -16,11 +16,7 @@ impl AcpiHandler for AcpiHandlerImpl {
     ) -> PhysicalMapping<Self, T> {
         let virtual_address = to_virtual_address(
             PhysAddr::new(physical_address as u64),
-            MEMORY_MAPPER
-                .try_get()
-                .expect("Heap not initialized")
-                .phys_offset()
-                .as_u64(),
+            MEMORY_MAPPER.phys_offset().as_u64(),
         );
         unsafe {
             PhysicalMapping::new(

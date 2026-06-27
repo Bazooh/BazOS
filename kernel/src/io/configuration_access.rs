@@ -18,7 +18,7 @@ impl ConfigurationAccessImpl {
     /// valid for the entire lifetime of the program (i.e. `'static`), which implies that no Rust
     /// references may be used to access any of the memory region at any point.
     pub unsafe fn new(mmio_base: *mut u8, cam: Cam) -> Self {
-        assert!(mmio_base as usize & 0x3 == 0);
+        assert_eq!(mmio_base as usize & 0x3, 0);
         Self {
             mmio_base: mmio_base as *mut u32,
             cam,

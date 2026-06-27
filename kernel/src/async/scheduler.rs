@@ -1,20 +1,16 @@
-use core::{
-    arch::asm,
-    sync::atomic::{AtomicU32, Ordering},
-};
-use std::{serial_print, serial_println};
+use core::arch::asm;
 
+use crate::r#async::{process::Process, thread::Thread};
+use crate::println;
 use alloc::{boxed::Box, collections::btree_map::BTreeMap, vec::Vec};
 use conquer_once::spin::OnceCell;
 use spin::{Mutex, MutexGuard};
-
-use crate::r#async::{process::Process, thread::Thread};
+use std::serial_println;
 
 static SCHEDULER: OnceCell<Mutex<Scheduler>> = OnceCell::uninit();
 
 pub struct Scheduler {
     processes: BTreeMap<u64, Process>,
-    threads: Vec<Thread>,
     last_pid: u64,
 }
 
@@ -22,7 +18,6 @@ impl Scheduler {
     fn new() -> Scheduler {
         Scheduler {
             processes: BTreeMap::new(),
-            threads: Vec::new(),
             last_pid: 0,
         }
     }
@@ -36,33 +31,40 @@ impl Scheduler {
         self.last_pid
     }
 
-    pub fn add_thread(&mut self, thread: Thread) {
-        self.threads.push(thread);
-    }
-
     pub fn add_process(&mut self, process: Process) {
-        self.add_thread(process.create_main_thread());
         self.processes.insert(process.pid(), process);
     }
 
-    pub fn set_current_thread(thread: *mut Thread) {
+    pub fn set_current_thread(thread: &Thread) {
         unsafe {
             asm!("mov gs:0, {}", in(reg) thread, options(nostack, preserves_flags));
         }
     }
 
-    pub fn current_thread() -> *mut Thread {
-        let thread;
+    /// Safety: you must be the only one to use it
+    pub unsafe fn current_thread() -> &'static mut Thread {
+        let mut thread: *mut Thread;
         unsafe {
             asm!("mov {}, gs:0", out(reg) thread, options(nostack, preserves_flags));
+            &mut *thread
         }
-        thread
+    }
+
+    pub fn get_process(&self, pid: u64) -> Option<&Process> {
+        self.processes.get(&pid)
+    }
+
+    fn threads(&self) -> impl Iterator<Item = &Thread> {
+        self.processes
+            .values()
+            .flat_map(|process| process.threads())
     }
 
     pub fn run(&mut self) -> ! {
         // TODO: Switch between threads
-        let thread = self.threads.get(0).expect("No threads");
-        thread.exec();
+        let thread = self.threads().next().expect("No threads to run");
+        Self::set_current_thread(thread);
+        thread.exec()
     }
 }
 

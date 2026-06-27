@@ -8,7 +8,7 @@ pub enum SyscallNumber {
 }
 
 pub fn syscall(syscall_number: SyscallNumber, arg0: usize, arg1: usize, arg2: usize) -> isize {
-    let result;
+    let mut result;
     unsafe {
         asm!(
             "int 0x80",

@@ -1,10 +1,4 @@
-use core::ptr::null_mut;
-
-use crate::memory::{
-    FreeSpaceNode, HEAP_SIZE, HEAP_START, PAGE_SIZE,
-    binary_allocator::BinaryAllocator,
-    program_allocator::{PROGRAM_SIZE, PROGRAM_START},
-};
+use crate::memory::{FreeSpaceNode, binary_allocator::BinaryAllocator};
 
 pub struct BuddyAllocator<const MAX_DEPTH: usize> {
     nodes: [Option<&'static mut FreeSpaceNode>; MAX_DEPTH],

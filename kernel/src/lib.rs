@@ -1,18 +1,14 @@
 #![allow(non_snake_case)]
 #![no_std]
 #![no_main]
-#![feature(
-    allocator_api,
-    custom_test_frameworks,
-    int_lowest_highest_one,
-    unboxed_closures
-)]
+#![feature(allocator_api, custom_test_frameworks, unboxed_closures)]
 #![test_runner(std::tests::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
 extern crate alloc;
 
 use alloc::{format, string::String, vec::Vec};
+use core::panic::PanicInfo;
 use core::str::from_utf8;
 #[cfg(test)]
 use std::hlt_loop;
@@ -22,7 +18,6 @@ use bootloader::BootInfo;
 #[cfg(test)]
 use bootloader::entry_point;
 
-use crate::r#async::executor::Executor;
 use crate::r#async::init_async;
 use crate::gdt::init_gdt;
 use crate::memory::init_memory;
@@ -43,7 +38,6 @@ entry_point!(main);
 #[cfg(test)]
 pub fn main(boot_info: &'static BootInfo) -> ! {
     init(boot_info);
-    serial_println!("Tst");
     test_main();
     hlt_loop();
 }

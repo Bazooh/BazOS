@@ -1,6 +1,4 @@
-use std::serial_println;
-
-use x86_64::{PhysAddr, VirtAddr};
+use x86_64::VirtAddr;
 
 use crate::fs::elf::error::ElfParserError;
 

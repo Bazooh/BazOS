@@ -6,25 +6,17 @@
 
 extern crate alloc;
 
-use core::arch::asm;
 #[cfg(test)]
 use std::qemu::exit;
-use std::serial_println;
 
 use BazOS::{
     r#async::scheduler::Scheduler,
-    fs::{driver::DiskDriver, elf::header::ElfHeader, file::File, path::Path},
+    fs::{driver::DiskDriver, path::Path},
     init,
     io::disk::driver::DISK_DRIVER,
-    memory::MEMORY_MAPPER,
-    print_data,
     program::executor::ProgramExecutor,
 };
-use alloc::vec::Vec;
-use bootloader::{BootInfo, bootinfo::MemoryRegionType, entry_point};
-
-use BazOS::r#async::executor::Executor;
-use x86_64::{VirtAddr, structures::paging::Translate};
+use bootloader::{BootInfo, entry_point};
 
 entry_point!(main);
 

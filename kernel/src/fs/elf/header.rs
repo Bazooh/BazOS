@@ -1,14 +1,9 @@
-use std::serial_println;
-
 use alloc::vec::Vec;
 use x86_64::VirtAddr;
 
-use crate::{
-    fs::elf::{
-        error::ElfParserError,
-        program_header::{ELF_PROGRAM_HEADER_SIZE, ElfProgramHeader},
-    },
-    print_data,
+use crate::fs::elf::{
+    error::ElfParserError,
+    program_header::{ELF_PROGRAM_HEADER_SIZE, ElfProgramHeader},
 };
 
 pub const ELF_HEADER_SIZE: usize = 0x40;

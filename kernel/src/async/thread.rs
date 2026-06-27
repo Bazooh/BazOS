@@ -1,16 +1,9 @@
+use alloc::boxed::Box;
+use alloc::sync::Arc;
 use core::{
     alloc::{GlobalAlloc, Layout},
     arch::{asm, naked_asm},
     ops::{Add, DerefMut},
-};
-
-use alloc::vec::Vec;
-use x86_64::{
-    PhysAddr, VirtAddr,
-    structures::paging::{
-        Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame, Size4KiB, Translate,
-        page,
-    },
 };
 
 use crate::{
@@ -20,6 +13,19 @@ use crate::{
         thread,
     },
     memory::{MEMORY_MAPPER, PAGE_SIZE, PROGRAM_ALLOCATOR},
+    println,
+};
+use alloc::vec::Vec;
+use core::alloc::Allocator;
+use core::ops::Deref;
+use spin::Mutex;
+use std::serial_println;
+use x86_64::{
+    PhysAddr, VirtAddr,
+    structures::paging::{
+        Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame, Size4KiB, Translate,
+        page,
+    },
 };
 
 const STACK_SIZE: usize = 4 * PAGE_SIZE;
@@ -53,19 +59,40 @@ pub struct Context {
 }
 
 #[derive(Debug)]
+#[repr(C)]
+pub struct ThreadId {
+    pub pid: u64,
+    pub thread_id: u64,
+}
+
+#[derive(Debug)]
+#[repr(C)]
 pub struct Thread {
-    pid: u64,
+    context: Context,
+    id: ThreadId,
     page_table_addr: PhysAddr,
     stack_end: VirtAddr,
-    context: Context,
 }
 
 impl Thread {
-    fn without_context(pid: u64, page_table_addr: PhysAddr) -> Self {
+    pub fn new(
+        id: ThreadId,
+        page_table: &mut OffsetPageTable<'static>,
+        entry_point: VirtAddr,
+    ) -> Self {
+        let stack_end = Self::create_stack(page_table);
         Thread {
-            pid,
-            page_table_addr,
-            stack_end: Self::create_stack(page_table_addr),
+            id,
+            page_table_addr: MEMORY_MAPPER
+                .translate_page(
+                    Page::from_start_address(VirtAddr::from_ptr(
+                        page_table.level_4_table() as *const PageTable
+                    ))
+                    .unwrap(),
+                )
+                .expect("Failed to translate page table")
+                .start_address(),
+            stack_end,
             context: Context {
                 rax: 0,
                 rbx: 0,
@@ -88,49 +115,30 @@ impl Thread {
                 cs: 0,
                 ss: 0,
                 rflags: 0,
-                rip: 0,
+                rip: entry_point.as_u64(),
                 rsp: 0,
             },
         }
     }
 
-    pub fn new(pid: u64, page_table_addr: PhysAddr, entry_point: VirtAddr) -> Self {
-        let mut thread = Self::without_context(pid, page_table_addr);
-        thread.context.rip = entry_point.as_u64();
-        thread
-    }
-
-    pub fn fork(&self) {
-        let mut thread = Self::without_context(self.pid, self.page_table_addr);
-        thread.context = self.context.clone();
-        thread.context.rax = thread.pid;
-        Scheduler::get().add_thread(thread);
-    }
-
-    fn create_stack(page_table_addr: PhysAddr) -> VirtAddr {
-        let stack = VirtAddr::from_ptr(unsafe {
-            PROGRAM_ALLOCATOR.alloc(Layout::from_size_align(STACK_SIZE, PAGE_SIZE).unwrap())
-        });
+    fn create_stack(page_table: &mut OffsetPageTable<'static>) -> VirtAddr {
+        let stack = VirtAddr::from_ptr(
+            (&PROGRAM_ALLOCATOR)
+                .allocate(Layout::from_size_align(STACK_SIZE, PAGE_SIZE).unwrap())
+                .unwrap()
+                .as_ptr(),
+        );
 
         let phys_addr = MEMORY_MAPPER
-            .get()
-            .expect("Memory mapper not initialized")
             .translate_addr(stack)
             .expect("Translation failed");
-
-        let phys_offset = MEMORY_MAPPER.get().unwrap().phys_offset();
-        let page_table_addr = phys_offset + page_table_addr.as_u64();
-        let mut table = unsafe {
-            let page_table = &mut *(page_table_addr.as_mut_ptr());
-            OffsetPageTable::new(page_table, phys_offset)
-        };
 
         let number_pages = STACK_SIZE.div_ceil(PAGE_SIZE);
         let page: Page<Size4KiB> = Page::from_start_address(stack).expect("Address not aligned");
         let frame = PhysFrame::from_start_address(phys_addr).expect("Address not aligned");
         for i in 0..number_pages as u64 {
             unsafe {
-                table
+                page_table
                     .map_to(
                         page + i,
                         frame + i,
@@ -148,27 +156,41 @@ impl Thread {
 
     #[unsafe(naked)]
     extern "C" fn exit_trampoline() -> ! {
-        naked_asm!("cli", "hlt"); // stop interrupts and hlt
+        naked_asm!("cli", "hlt") // stop interrupts and hlt
     }
 
     pub fn exec(&self) -> ! {
         unsafe {
             asm!(
-                "mov {tmp}, gs:0
-                 mov [{tmp}], {self_ptr}",
                 "mov cr3, {cr3}",        // switch page table
                 "mov rsp, {rsp}",        // set new stack
                 "push {trampoline}",     // push exit trampoline
-                "jmp {rip}",             // jump to entry point
-                tmp        = in(reg) 0,
-                self_ptr   = in(reg) self,
+
+                "xor rax, rax",
+                "xor rcx, rcx",
+                "xor rdx, rdx",
+                "xor rsi, rsi",
+                "xor rdi, rdi",
+                "xor r8,  r8",
+                "xor r9,  r9",
+                "xor r10, r10",
+                "xor r11, r11",
+                "xor rbp, rbp",
+                "fninit",
+
+                "jmp r12",             // jump to entry point
+
                 cr3        = in(reg) self.page_table_addr.as_u64(),
                 rsp        = in(reg) self.stack_end.as_u64(),
                 trampoline = in(reg) Self::exit_trampoline as *const () as usize,
-                rip        = in(reg) self.context.rip,
+                in("r12") self.context.rip,
                 options(noreturn)
             )
-        };
+        }
+    }
+
+    pub fn fork(&self) {
+        println!("Fork");
     }
 }
 
@@ -178,7 +200,6 @@ macro_rules! checkpoint {
         "push rdi
          push rax
          mov rax, gs:0
-         mov rax, [rax]
 
          mov [rax + 0x08], rbx
          mov [rax + 0x10], rcx
@@ -221,7 +242,6 @@ macro_rules! checkpoint {
 macro_rules! restore {
     () => {
         "mov rax, gs:0
-         mov rax, [rax]
 
          mov rbx, [rax + 0x08]
          mov rcx, [rax + 0x10]

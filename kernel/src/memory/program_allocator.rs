@@ -8,16 +8,15 @@ use spin::Mutex;
 use x86_64::{
     VirtAddr,
     structures::paging::{
-        FrameAllocator, OffsetPageTable, PageTableFlags, PhysFrame, Size4KiB, Translate,
-        mapper::MapToError,
+        FrameAllocator, PageTableFlags, PhysFrame, Size4KiB, Translate, mapper::MapToError,
     },
 };
 
+use crate::memory::memory_mapper::PageMapper;
 use crate::memory::{
     MEMORY_MAPPER, PAGE_SIZE,
     binary_allocator::BinaryAllocator,
     buddy_allocator::{BuddyAllocator, compute_max_depth},
-    frame_allocator::map_pages,
 };
 
 pub const PROGRAM_START: usize = 0xffff_c444_0000_0000;
@@ -50,10 +49,10 @@ impl ProgramAllocator {
 unsafe impl GlobalAlloc for ProgramAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let size = self.allocator.lock().compute_size(layout);
-        match self.allocator.lock().alloc(size) {
-            Some(ptr) => ptr,
-            None => null_mut(),
-        }
+        self.allocator
+            .lock()
+            .alloc(size)
+            .unwrap_or_else(|| null_mut())
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
@@ -76,14 +75,11 @@ unsafe impl Allocator for &ProgramAllocator {
     }
 }
 
-pub fn init_program_allocator(
-    memory_mapper: &mut OffsetPageTable<'_>,
-) -> Result<(), MapToError<Size4KiB>> {
-    map_pages(
+pub fn init_program_allocator(page_mapper: &mut PageMapper) -> Result<(), MapToError<Size4KiB>> {
+    page_mapper.map(
         VirtAddr::new(PROGRAM_START as u64),
         PROGRAM_SIZE,
         PageTableFlags::WRITABLE,
-        memory_mapper,
     )?;
 
     PROGRAM_ALLOCATOR.init();
@@ -94,12 +90,6 @@ pub fn init_program_allocator(
 unsafe impl FrameAllocator<Size4KiB> for BuddyAllocator<USER_PROGRAM_MAX_DEPTH> {
     fn allocate_frame(&mut self) -> Option<PhysFrame> {
         let ptr = self.alloc(PAGE_SIZE)?;
-        PhysFrame::from_start_address(
-            MEMORY_MAPPER
-                .get()
-                .expect("Memory mapper not initialized")
-                .translate_addr(VirtAddr::from_ptr(ptr))?,
-        )
-        .ok()
+        PhysFrame::from_start_address(MEMORY_MAPPER.translate_addr(VirtAddr::from_ptr(ptr))?).ok()
     }
 }

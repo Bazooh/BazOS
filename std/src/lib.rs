@@ -5,6 +5,7 @@
 
 use core::panic::PanicInfo;
 
+pub mod fork;
 pub mod fs;
 pub mod interrupts;
 pub mod out;

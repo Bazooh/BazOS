@@ -2,13 +2,14 @@ use bootloader::bootinfo::MemoryMap;
 use spin::Mutex;
 
 use crate::memory::{
-    frame_allocator::{BootLoaderFrameAllocator, FRAME_ALLOCATOR, init_memory_mapper},
+    frame_allocator::{BootLoaderFrameAllocator, FRAME_ALLOCATOR},
     heap::init_heap,
     program_allocator::init_program_allocator,
 };
 
+pub use crate::memory::memory_mapper::MEMORY_MAPPER;
 pub use composite_allocator::CompositeAllocator;
-pub use frame_allocator::{MEMORY_MAPPER, to_virtual_address};
+pub use frame_allocator::to_virtual_address;
 pub use heap::HEAP;
 pub use program_allocator::PROGRAM_ALLOCATOR;
 
@@ -17,6 +18,7 @@ mod buddy_allocator;
 mod composite_allocator;
 mod frame_allocator;
 mod heap;
+mod memory_mapper;
 mod program_allocator;
 mod slab_allocator;
 
@@ -29,14 +31,9 @@ pub fn init_memory(physical_memory_offset: u64, memory_map: &'static MemoryMap) 
         .try_init_once(move || Mutex::new(unsafe { BootLoaderFrameAllocator::new(memory_map) }))
         .expect("Frame allocator already initialized");
 
-    let mut memory_mapper = unsafe { init_memory_mapper(physical_memory_offset) };
-
-    init_heap(&mut memory_mapper).expect("Heap initialization failed");
-    init_program_allocator(&mut memory_mapper).expect("Program allocator initialization failed");
-
-    MEMORY_MAPPER
-        .try_init_once(move || memory_mapper)
-        .expect("Memory mapper already initialized");
+    unsafe {
+        MEMORY_MAPPER.init(physical_memory_offset);
+    }
 }
 
 #[repr(C)]

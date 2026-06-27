@@ -2,6 +2,7 @@ use crate::interrupts::{
     idt::ExceptionStackFrame,
     syscall::{fork::fork_handler, out::out_handler},
 };
+use std::serial_println;
 
 mod fork;
 mod out;

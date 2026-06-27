@@ -1,13 +1,6 @@
-use core::{
-    arch::asm,
-    fmt::{Result, Write},
-};
+use core::fmt::{Result, Write};
 
-use crate::{
-    qemu::SERIAL1,
-    serial_print, serial_println,
-    syscall::{SyscallNumber, syscall},
-};
+use crate::syscall::{SyscallNumber, syscall};
 
 pub struct Writer;
 
