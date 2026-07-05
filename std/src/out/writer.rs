@@ -1,6 +1,6 @@
-use core::fmt::{Result, Write};
-
+use crate::serial_println;
 use crate::syscall::{SyscallNumber, syscall};
+use core::fmt::{Result, Write};
 
 pub struct Writer;
 

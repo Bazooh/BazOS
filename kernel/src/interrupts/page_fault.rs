@@ -1,9 +1,9 @@
 use core::{arch::asm, fmt::Display};
 
-use bit_field::BitField;
-use x86_64::{instructions::interrupts::int3, registers::control};
-
 use crate::{interrupts::idt::ExceptionStackFrame, println};
+use bit_field::BitField;
+use std::serial_println;
+use x86_64::registers::control;
 
 struct PageFaultErrorCode(u8);
 

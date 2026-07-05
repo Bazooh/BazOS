@@ -1,3 +1,4 @@
+use crate::serial_println;
 use core::arch::asm;
 
 #[repr(u64)]
@@ -12,12 +13,11 @@ pub fn syscall(syscall_number: SyscallNumber, arg0: usize, arg1: usize, arg2: us
     unsafe {
         asm!(
             "int 0x80",
-            in("rax") syscall_number as u64,
             in("rdi") arg0,
             in("rsi") arg1,
             in("rdx") arg2,
-            lateout("rax") result,
-            options(nostack)
+            in("rcx") syscall_number as u64,
+            out("rax") result,
         );
     }
     result

@@ -120,10 +120,6 @@ impl VirtDiskDirNode {
         u8_array_view(&self.buffer)
     }
 
-    fn buffer_mut(&mut self) -> &mut [u8; BLOCK_SIZE] {
-        u8_array_mut_view(&mut self.buffer)
-    }
-
     fn files_inode_index(&self) -> impl Iterator<Item = INodeIndex> {
         self.buffer[4..].iter().filter_map(|inode_index| {
             if *inode_index == 0 {

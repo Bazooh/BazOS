@@ -1,49 +1,53 @@
+use crate::utils::debug::DebugHex;
 use alloc::vec::Vec;
 
 #[derive(Debug)]
 pub struct Interval {
-    start: usize,
-    end: usize,
+    start: DebugHex<u64>,
+    end: DebugHex<u64>,
 }
 
 impl Interval {
-    pub fn new(start: usize, end: usize) -> Option<Self> {
+    pub fn new(start: u64, end: u64) -> Option<Self> {
         if start > end {
             return None;
         }
-        Some(Interval { start, end })
+        Some(Interval {
+            start: DebugHex(start),
+            end: DebugHex(end),
+        })
     }
 
-    pub fn with_size(start: usize, size: usize) -> Self {
+    pub fn with_size(start: u64, size: u64) -> Self {
         Interval {
-            start,
-            end: start + size,
+            start: DebugHex(start),
+            end: DebugHex(start + size),
         }
     }
 
     pub fn overlap(&self, other: &Interval) -> bool {
-        self.start <= other.end && self.end >= other.start
+        self.start.0 <= other.end.0 && self.end.0 >= other.start.0
     }
 
-    pub fn contains(&self, point: usize) -> bool {
-        self.start <= point && self.end >= point
+    pub fn contains(&self, point: u64) -> bool {
+        self.start.0 <= point && self.end.0 >= point
     }
 
-    pub fn size(&self) -> usize {
-        self.end - self.start
+    pub fn size(&self) -> u64 {
+        self.end.0 - self.start.0
     }
 
-    pub fn start(&self) -> usize {
-        self.start
+    pub fn start(&self) -> u64 {
+        self.start.0
     }
 
-    pub fn end(&self) -> usize {
-        self.end
+    pub fn end(&self) -> u64 {
+        self.end.0
     }
 }
 
 pub fn merge_intervals(mut intervals: Vec<Interval>) -> Vec<Interval> {
-    intervals.sort_by(|a, b| a.start.cmp(&b.start));
+    intervals.sort_by(|a, b| a.start().cmp(&b.start()));
 
     let mut merged: Vec<Interval> = Vec::new();
     for interval in intervals {

@@ -1,4 +1,3 @@
-use alloc::vec;
 use core::{
     alloc::{GlobalAlloc, Layout},
     ptr::NonNull,
@@ -7,7 +6,7 @@ use core::{
 use virtio_drivers::{BufferDirection, Hal};
 use x86_64::{PhysAddr, VirtAddr, structures::paging::Translate};
 
-use crate::memory::{HEAP, MEMORY_MAPPER, PAGE_SIZE, to_virtual_address};
+use crate::memory::{KERNEL_ALLOCATOR, MEMORY_MAPPER, PAGE_SIZE, to_virtual_address};
 
 pub struct HalImpl;
 
@@ -18,8 +17,8 @@ unsafe impl Hal for HalImpl {
     ) -> (virtio_drivers::PhysAddr, NonNull<u8>) {
         assert!(pages > 0);
 
-        let layout = Layout::array::<u8>(pages * PAGE_SIZE).unwrap();
-        let virt_ptr = unsafe { HEAP.alloc_zeroed(layout) };
+        let layout = Layout::array::<u8>(pages * PAGE_SIZE as usize).unwrap();
+        let virt_ptr = unsafe { KERNEL_ALLOCATOR.alloc_zeroed(layout) };
         let phys_addr = MEMORY_MAPPER
             .translate_addr(VirtAddr::from_ptr(virt_ptr))
             .expect("Translation failed");
@@ -35,9 +34,9 @@ unsafe impl Hal for HalImpl {
         vaddr: NonNull<u8>,
         pages: usize,
     ) -> i32 {
-        let layout = Layout::array::<u8>(pages * PAGE_SIZE).unwrap();
+        let layout = Layout::array::<u8>(pages * PAGE_SIZE as usize).unwrap();
         unsafe {
-            HEAP.dealloc(vaddr.as_ptr(), layout);
+            KERNEL_ALLOCATOR.dealloc(vaddr.as_ptr(), layout);
         }
         0
     }

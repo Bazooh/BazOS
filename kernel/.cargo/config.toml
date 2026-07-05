@@ -8,3 +8,6 @@ target = "../x86_64-BazOS.json"
 
 [target.'cfg(target_os = "none")']
 runner = "bootimage runner"
+rustflags = [
+    "-C", "no-redzone",
+]

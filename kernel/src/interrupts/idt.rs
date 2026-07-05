@@ -14,12 +14,6 @@ use x86_64::{
     structures::{DescriptorTablePointer, gdt::SegmentSelector},
 };
 
-use crate::{
-    r#async::thread::Thread,
-    interrupts::syscall::{SyscallNumber, syscall_handler},
-    utils::debug::DebugHex,
-};
-
 use super::{
     breakpoint::breakpoint_handler,
     divide_by_zero::divide_by_zero_handler,
@@ -27,6 +21,11 @@ use super::{
     hardware::{HardwareInterrupt, PICS, keyboard::keyboard_handler, timer::timer_handler},
     invalid_opcode::invalid_opcode_handler,
     page_fault::page_fault_handler,
+};
+use crate::{
+    r#async::thread::Thread,
+    interrupts::syscall::{SyscallNumber, syscall_handler},
+    utils::debug::DebugHex,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -102,7 +101,7 @@ impl EntryOptions {
     }
 }
 
-type FunctionHandler = extern "C" fn() -> !;
+type FunctionHandler = extern "C" fn() -> ();
 
 struct InteruptDescriptorTable([Entry; 256]);
 
@@ -140,6 +139,7 @@ macro_rules! save_scratch_reg {
     };
 }
 
+#[macro_export]
 macro_rules! restore_scratch_reg {
     () => {
         "pop r11
@@ -154,6 +154,30 @@ macro_rules! restore_scratch_reg {
     };
 }
 
+#[macro_export]
+macro_rules! save_unscratched_reg {
+    () => {
+        "push rbx
+         push rbp
+         push r12
+         push r13
+         push r14
+         push r15"
+    };
+}
+
+#[macro_export]
+macro_rules! restore_unscratched_reg {
+    () => {
+        "pop r15
+         pop r14
+         pop r13
+         pop r12
+         pop rbp
+         pop rbx"
+    };
+}
+
 type ExceptionHandler = extern "C" fn(&ExceptionStackFrame);
 
 macro_rules! handler {
@@ -162,14 +186,56 @@ macro_rules! handler {
         $name as ExceptionHandler;
 
         #[unsafe(naked)]
-        extern "C" fn wrapper() -> ! {
+        extern "C" fn wrapper() -> () {
             naked_asm!(
                 save_scratch_reg!(),
-                "mov rdi, rsp
-                 add rdi, 8*9
-                 call {func}",
+                "mov rdi, rsp",
+                "add rdi, 8*9",
+                "call {func}",
                 restore_scratch_reg!(),
                 "iretq",
+                func = sym $name
+            );
+        }
+        wrapper
+    }};
+}
+
+type TimerExceptionHandler = extern "C" fn(&ExceptionStackFrame) -> *mut Thread;
+
+macro_rules! handler_for_timer {
+    ($name: ident) => {{
+        // Ensure type safety
+        $name as TimerExceptionHandler;
+
+        #[unsafe(naked)]
+        extern "C" fn wrapper() -> () {
+            naked_asm!(
+                // "int 0x81",
+                save_scratch_reg!(),
+                "mov rdi, rsp",
+                "add rdi, 8*9",
+                "call {func}",
+                "cmp rax, 0",
+                "jne switch",
+
+                // No context switch
+                restore_scratch_reg!(),
+                "iretq",
+
+                // Context switch
+                "switch:",
+                save_unscratched_reg!(),
+                "mov rdi, gs:0",
+                "mov [rdi], rsp", // Save `rsp` into current_thread (gs:0)
+                "mov gs:0, rax",  // Switch current_thread
+                "mov rsp, [rax]", // Restore `rsp` into current_thread
+                "mov rax, [rax + 0x8]", // rax = page_table_addr
+                "mov cr3, rax",  // switch page table
+                restore_unscratched_reg!(),
+                restore_scratch_reg!(),
+                "iretq",
+
                 func = sym $name
             );
         }
@@ -185,16 +251,17 @@ macro_rules! handler_with_error_code {
         $name as ErrorCodeHandler;
 
         #[unsafe(naked)]
-        extern "C" fn wrapper() -> ! {
+        extern "C" fn wrapper() -> () {
             naked_asm!(
                 save_scratch_reg!(),
-                "mov rsi, [rsp + 8*9]
-                 mov rdi, rsp
-                 add rdi, 8*9
-                 sub rsp, 8
-                 call {func}
-                 add rsp, 8",
+                "mov rsi, [rsp + 8*9]",
+                "mov rdi, rsp",
+                "add rdi, 8*10",
+                "sub rsp, 8",
+                "call {func}",
+                "add rsp, 8",
                 restore_scratch_reg!(),
+                "add rsp, 8", // Pop the error_code
                 "iretq",
                 func = sym $name
             );
@@ -204,7 +271,7 @@ macro_rules! handler_with_error_code {
 }
 
 type SyscallHandler =
-    extern "C" fn(usize, usize, usize, SyscallNumber, ExceptionStackFrame) -> isize;
+    extern "C" fn(usize, usize, usize, SyscallNumber, &ExceptionStackFrame) -> isize;
 
 macro_rules! handler_for_syscall {
     ($name: ident) => {{
@@ -212,19 +279,13 @@ macro_rules! handler_for_syscall {
         $name as SyscallHandler;
 
         #[unsafe(naked)]
-        extern "C" fn wrapper() -> ! {
+        extern "C" fn wrapper() -> () {
             naked_asm!(
-                crate::checkpoint!(),
-                "sub rsp, 8
-                 mov rcx, rax
-                 mov r8, rsp
-                 add r8, 8
-                 call {func}
-                 add rsp, 8
-                 push rax",
-                crate::restore!(),
-                "pop rax
-                 iretq",
+                "mov r8, rsp",     // 5th arg: &ExceptionStackFrame
+                "sub rsp, 8",      // Align stack
+                "call {func}",
+                "add rsp, 8",      // Undo `Align stack`
+                "iretq",
                 func = sym $name
             );
         }
@@ -238,7 +299,7 @@ pub struct ExceptionStackFrame {
     pub instruction_pointer: VirtAddr,
     code_segment: DebugHex<u64>,
     cpu_flags: DebugHex<u64>,
-    stack_pointer: VirtAddr,
+    pub stack_pointer: VirtAddr,
     stack_segment: DebugHex<u64>,
 }
 
@@ -251,7 +312,10 @@ lazy_static! {
         idt.set_handler(8, handler_with_error_code!(double_fault_handler))
             .set_stack_index(0);
         idt.set_handler(14, handler_with_error_code!(page_fault_handler));
-        idt.set_handler(HardwareInterrupt::Timer as u8, handler!(timer_handler));
+        idt.set_handler(
+            HardwareInterrupt::Timer as u8,
+            handler_for_timer!(timer_handler),
+        );
         idt.set_handler(
             HardwareInterrupt::Keyboard as u8,
             handler!(keyboard_handler),

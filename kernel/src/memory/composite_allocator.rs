@@ -1,24 +1,20 @@
-use core::alloc::{AllocError, Allocator};
-use core::ptr::{NonNull, slice_from_raw_parts_mut};
+use crate::memory::{
+    HEAP_SIZE, HEAP_START, PAGE_SIZE, binary_allocator::BinaryAllocator,
+    buddy_allocator::BuddyAllocator, slab_allocator::SlabAllocator,
+};
 use core::{
     alloc::{GlobalAlloc, Layout},
     ptr::null_mut,
 };
 use spin::Mutex;
 
-use crate::memory::program_allocator::ProgramAllocator;
-use crate::memory::{
-    HEAP_SIZE, HEAP_START, PAGE_SIZE, binary_allocator::BinaryAllocator,
-    buddy_allocator::BuddyAllocator, slab_allocator::SlabAllocator,
-};
-
-pub struct CompositeAllocator<const MAX_DEPTH: usize> {
+pub struct KernelAllocator<const MAX_DEPTH: usize> {
     slab_allocator: Mutex<SlabAllocator<BuddyAllocator<MAX_DEPTH>>>,
 }
 
-impl<const MAX_DEPTH: usize> CompositeAllocator<MAX_DEPTH> {
+impl<const MAX_DEPTH: usize> KernelAllocator<MAX_DEPTH> {
     pub const fn new() -> Self {
-        CompositeAllocator {
+        KernelAllocator {
             slab_allocator: Mutex::new(SlabAllocator::new()),
         }
     }
@@ -31,7 +27,7 @@ impl<const MAX_DEPTH: usize> CompositeAllocator<MAX_DEPTH> {
     }
 }
 
-unsafe impl<const MAX_DEPTH: usize> GlobalAlloc for CompositeAllocator<MAX_DEPTH> {
+unsafe impl<const MAX_DEPTH: usize> GlobalAlloc for KernelAllocator<MAX_DEPTH> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let size = self.slab_allocator.lock().compute_size(layout);
         self.slab_allocator

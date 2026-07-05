@@ -1,6 +1,6 @@
 use core::{
     iter::{Filter, FlatMap, Map, StepBy},
-    ops::{DerefMut, Range},
+    ops::Range,
     slice::Iter,
 };
 
@@ -9,11 +9,7 @@ use conquer_once::spin::OnceCell;
 use spin::Mutex;
 use x86_64::{
     PhysAddr, VirtAddr,
-    registers::control::Cr3,
-    structures::paging::{
-        FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame,
-        Size4KiB, mapper::MapToError,
-    },
+    structures::paging::{FrameAllocator, PhysFrame, Size4KiB},
 };
 
 pub static FRAME_ALLOCATOR: OnceCell<Mutex<BootLoaderFrameAllocator>> = OnceCell::uninit();

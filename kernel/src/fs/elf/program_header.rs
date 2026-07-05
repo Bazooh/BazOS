@@ -41,12 +41,12 @@ impl TryFrom<u32> for ElfProgramType {
 #[derive(Debug)]
 pub struct ElfProgramHeader {
     type_: ElfProgramType,
-    flags: u32,
-    offset: usize,
+    _flags: u32,
+    offset: u64,
     vaddr: VirtAddr,
-    file_size: usize,
-    mem_size: usize,
-    align: usize,
+    file_size: u64,
+    mem_size: u64,
+    align: u64,
 }
 
 impl ElfProgramHeader {
@@ -54,12 +54,12 @@ impl ElfProgramHeader {
         Ok(ElfProgramHeader {
             type_: ElfProgramType::try_from(u32::from_le_bytes(header[..4].try_into().unwrap()))
                 .map_err(|_| ElfParserError::UnknownProgramType)?,
-            flags: u32::from_le_bytes(header[4..8].try_into().unwrap()),
-            offset: usize::from_le_bytes(header[8..16].try_into().unwrap()),
+            _flags: u32::from_le_bytes(header[4..8].try_into().unwrap()),
+            offset: u64::from_le_bytes(header[8..16].try_into().unwrap()),
             vaddr: VirtAddr::new(u64::from_le_bytes(header[16..24].try_into().unwrap())),
-            file_size: usize::from_le_bytes(header[32..40].try_into().unwrap()),
-            mem_size: usize::from_le_bytes(header[40..48].try_into().unwrap()),
-            align: usize::from_le_bytes(header[48..56].try_into().unwrap()),
+            file_size: u64::from_le_bytes(header[32..40].try_into().unwrap()),
+            mem_size: u64::from_le_bytes(header[40..48].try_into().unwrap()),
+            align: u64::from_le_bytes(header[48..56].try_into().unwrap()),
         })
     }
 
@@ -71,19 +71,19 @@ impl ElfProgramHeader {
         self.vaddr
     }
 
-    pub fn mem_size(&self) -> usize {
+    pub fn mem_size(&self) -> u64 {
         self.mem_size
     }
 
-    pub fn align(&self) -> usize {
+    pub fn align(&self) -> u64 {
         self.align
     }
 
-    pub fn offset(&self) -> usize {
+    pub fn offset(&self) -> u64 {
         self.offset
     }
 
-    pub fn file_size(&self) -> usize {
+    pub fn file_size(&self) -> u64 {
         self.file_size
     }
 }

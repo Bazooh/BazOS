@@ -3,6 +3,12 @@ use core::{
     ptr::{NonNull, null_mut, slice_from_raw_parts_mut},
 };
 
+use crate::memory::memory_mapper::PageMapper;
+use crate::memory::{
+    MEMORY_MAPPER, PAGE_SIZE,
+    binary_allocator::BinaryAllocator,
+    buddy_allocator::{BuddyAllocator, compute_max_depth},
+};
 use alloc::alloc::{AllocError, Allocator};
 use spin::Mutex;
 use x86_64::{
@@ -12,17 +18,10 @@ use x86_64::{
     },
 };
 
-use crate::memory::memory_mapper::PageMapper;
-use crate::memory::{
-    MEMORY_MAPPER, PAGE_SIZE,
-    binary_allocator::BinaryAllocator,
-    buddy_allocator::{BuddyAllocator, compute_max_depth},
-};
+pub const PROGRAM_START: u64 = 0x5000_0000_0000;
+pub const PROGRAM_SIZE: u64 = 1024 * 1024; // 1 MiB
 
-pub const PROGRAM_START: usize = 0xffff_c444_0000_0000;
-pub const PROGRAM_SIZE: usize = 1024 * 1024; // 1 GiB
-
-const USER_PROGRAM_MAX_DEPTH: usize = compute_max_depth(PROGRAM_SIZE, PAGE_SIZE);
+const USER_PROGRAM_MAX_DEPTH: usize = compute_max_depth(PROGRAM_SIZE, PAGE_SIZE) as usize;
 
 pub static PROGRAM_ALLOCATOR: ProgramAllocator = ProgramAllocator::new();
 
@@ -77,7 +76,7 @@ unsafe impl Allocator for &ProgramAllocator {
 
 pub fn init_program_allocator(page_mapper: &mut PageMapper) -> Result<(), MapToError<Size4KiB>> {
     page_mapper.map(
-        VirtAddr::new(PROGRAM_START as u64),
+        VirtAddr::new(PROGRAM_START),
         PROGRAM_SIZE,
         PageTableFlags::WRITABLE,
     )?;
@@ -85,11 +84,4 @@ pub fn init_program_allocator(page_mapper: &mut PageMapper) -> Result<(), MapToE
     PROGRAM_ALLOCATOR.init();
 
     Ok(())
-}
-
-unsafe impl FrameAllocator<Size4KiB> for BuddyAllocator<USER_PROGRAM_MAX_DEPTH> {
-    fn allocate_frame(&mut self) -> Option<PhysFrame> {
-        let ptr = self.alloc(PAGE_SIZE)?;
-        PhysFrame::from_start_address(MEMORY_MAPPER.translate_addr(VirtAddr::from_ptr(ptr))?).ok()
-    }
 }

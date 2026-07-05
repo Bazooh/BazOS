@@ -1,10 +1,10 @@
 use core::fmt;
 
+use crate::interrupts::without_interrupts;
 use lazy_static::lazy_static;
 use spin::Mutex;
+use std::{serial_print, serial_println};
 use volatile::Volatile;
-
-use crate::interrupts::without_interrupts;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -219,6 +219,7 @@ impl Writer {
 
 impl fmt::Write for Writer {
     fn write_str(&mut self, s: &str) -> fmt::Result {
+        serial_print!("{s}");
         self.write_string(s);
         Ok(())
     }

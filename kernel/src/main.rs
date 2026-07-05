@@ -9,8 +9,8 @@ extern crate alloc;
 #[cfg(test)]
 use std::qemu::exit;
 
+use BazOS::r#async::scheduling::worker::Worker;
 use BazOS::{
-    r#async::scheduler::Scheduler,
     fs::{driver::DiskDriver, path::Path},
     init,
     io::disk::driver::DISK_DRIVER,
@@ -20,6 +20,7 @@ use bootloader::{BootInfo, entry_point};
 
 entry_point!(main);
 
+#[allow(unreachable_code)]
 pub fn main(boot_info: &'static BootInfo) -> ! {
     #[cfg(test)]
     exit(std::qemu::ExitCode::Success);
@@ -34,6 +35,6 @@ pub fn main(boot_info: &'static BootInfo) -> ! {
 
     ProgramExecutor::execute(file);
 
-    Scheduler::get().run();
+    Worker::new().run();
     // Executor::kernel();
 }

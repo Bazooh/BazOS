@@ -4,7 +4,7 @@ use core::{
 };
 
 #[repr(transparent)]
-pub struct DebugHex<T>(T);
+pub struct DebugHex<T>(pub T);
 
 impl<T: LowerHex> Debug for DebugHex<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), core::fmt::Error> {

@@ -1,16 +1,17 @@
 use core::arch::asm;
 
+use crate::r#async::threads_array::ThreadRef;
+use crate::r#async::threads_array::ThreadsArray;
 use crate::r#async::{process::Process, thread::Thread};
-use crate::println;
-use alloc::{boxed::Box, collections::btree_map::BTreeMap, vec::Vec};
+use alloc::{boxed::Box, collections::btree_map::BTreeMap};
 use conquer_once::spin::OnceCell;
 use spin::{Mutex, MutexGuard};
-use std::serial_println;
 
 static SCHEDULER: OnceCell<Mutex<Scheduler>> = OnceCell::uninit();
 
 pub struct Scheduler {
     processes: BTreeMap<u64, Process>,
+    threads: ThreadsArray,
     last_pid: u64,
 }
 
@@ -19,10 +20,11 @@ impl Scheduler {
         Scheduler {
             processes: BTreeMap::new(),
             last_pid: 0,
+            threads: ThreadsArray::new(),
         }
     }
 
-    pub fn get<'a>() -> MutexGuard<'a, Scheduler> {
+    pub fn lock<'a>() -> MutexGuard<'a, Scheduler> {
         SCHEDULER.get().expect("Scheduler not initialized").lock()
     }
 
@@ -35,36 +37,20 @@ impl Scheduler {
         self.processes.insert(process.pid(), process);
     }
 
-    pub fn set_current_thread(thread: &Thread) {
-        unsafe {
-            asm!("mov gs:0, {}", in(reg) thread, options(nostack, preserves_flags));
-        }
-    }
-
-    /// Safety: you must be the only one to use it
-    pub unsafe fn current_thread() -> &'static mut Thread {
-        let mut thread: *mut Thread;
-        unsafe {
-            asm!("mov {}, gs:0", out(reg) thread, options(nostack, preserves_flags));
-            &mut *thread
-        }
-    }
-
     pub fn get_process(&self, pid: u64) -> Option<&Process> {
         self.processes.get(&pid)
     }
 
-    fn threads(&self) -> impl Iterator<Item = &Thread> {
-        self.processes
-            .values()
-            .flat_map(|process| process.threads())
+    pub fn get_process_mut(&mut self, pid: u64) -> Option<&mut Process> {
+        self.processes.get_mut(&pid)
     }
 
-    pub fn run(&mut self) -> ! {
-        // TODO: Switch between threads
-        let thread = self.threads().next().expect("No threads to run");
-        Self::set_current_thread(thread);
-        thread.exec()
+    pub fn add_thread(&mut self, thread: Thread) {
+        self.threads.add(thread).expect("Max threads exceeded");
+    }
+
+    pub fn pick_thread(&mut self) -> Option<ThreadRef> {
+        self.threads.pick()
     }
 }
 

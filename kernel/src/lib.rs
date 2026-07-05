@@ -8,7 +8,6 @@
 extern crate alloc;
 
 use alloc::{format, string::String, vec::Vec};
-use core::panic::PanicInfo;
 use core::str::from_utf8;
 #[cfg(test)]
 use std::hlt_loop;
@@ -48,7 +47,6 @@ pub fn init(boot_info: &'static BootInfo) {
     interrupts::init_idt();
     init_memory(boot_info.physical_memory_offset, &boot_info.memory_map);
     init_async();
-    interrupts::enable();
     io::device::init();
 }
 

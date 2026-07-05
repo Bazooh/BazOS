@@ -1,26 +1,28 @@
-use crate::memory::{FreeSpaceNode, binary_allocator::BinaryAllocator};
+use crate::memory::{FreeSpaceNode, MEMORY_MAPPER, PAGE_SIZE, binary_allocator::BinaryAllocator};
+use x86_64::VirtAddr;
+use x86_64::structures::paging::{FrameAllocator, PhysFrame, Size4KiB, Translate};
 
 pub struct BuddyAllocator<const MAX_DEPTH: usize> {
     nodes: [Option<&'static mut FreeSpaceNode>; MAX_DEPTH],
-    minimum_block_size: usize,
-    depth_offset: usize,
-    mem_start: usize,
+    minimum_block_size: u64,
+    depth_offset: u64,
+    mem_start: u64,
 }
 
-pub const fn compute_max_depth(size: usize, minimum_block_size: usize) -> usize {
-    (size / minimum_block_size).lowest_one().unwrap() as usize + 1
+pub const fn compute_max_depth(size: u64, minimum_block_size: u64) -> u64 {
+    (size / minimum_block_size).lowest_one().unwrap() as u64 + 1
 }
 
 impl<const MAX_DEPTH: usize> BuddyAllocator<MAX_DEPTH> {
-    pub const fn new(size: usize, minimum_block_size: usize, mem_start: usize) -> Self {
+    pub const fn new(size: u64, minimum_block_size: u64, mem_start: u64) -> Self {
         assert!(size.is_power_of_two());
-        assert!(MAX_DEPTH == compute_max_depth(size, minimum_block_size));
+        assert!(MAX_DEPTH as u64 == compute_max_depth(size, minimum_block_size));
 
         const EMPTY: Option<&'static mut FreeSpaceNode> = None;
         BuddyAllocator {
             nodes: [EMPTY; MAX_DEPTH],
             minimum_block_size,
-            depth_offset: size.lowest_one().unwrap() as usize,
+            depth_offset: size.lowest_one().unwrap() as u64,
             mem_start,
         }
     }
@@ -35,31 +37,31 @@ impl<const MAX_DEPTH: usize> BuddyAllocator<MAX_DEPTH> {
 
     fn compute_right_buddy_ptr(
         &self,
-        depth: usize,
+        depth: u64,
         ptr: *mut FreeSpaceNode,
     ) -> Option<*mut FreeSpaceNode> {
         if depth == 0 {
             return None;
         }
 
-        unsafe { Some(ptr.byte_add(1 << (self.depth_offset - depth))) }
+        Some((ptr as u64 + (1 << (self.depth_offset - depth))) as *mut FreeSpaceNode)
     }
 
     fn compute_left_buddy_ptr(
         &self,
-        depth: usize,
+        depth: u64,
         ptr: *mut FreeSpaceNode,
     ) -> Option<*mut FreeSpaceNode> {
         if depth == 0 {
             return None;
         }
 
-        unsafe { Some(ptr.byte_sub(1 << (self.depth_offset - depth))) }
+        Some((ptr as u64 - (1 << (self.depth_offset - depth))) as *mut FreeSpaceNode)
     }
 
     fn compute_buddy_ptr(
         &self,
-        depth: usize,
+        depth: u64,
         ptr: *mut FreeSpaceNode,
         is_left: bool,
     ) -> Option<*mut FreeSpaceNode> {
@@ -74,13 +76,13 @@ impl<const MAX_DEPTH: usize> BuddyAllocator<MAX_DEPTH> {
         }
     }
 
-    fn is_left(&self, depth: usize, ptr: *const FreeSpaceNode) -> bool {
-        (ptr as usize - self.mem_start) & (1 << (self.depth_offset - depth)) == 0
+    fn is_left(&self, depth: u64, ptr: *const FreeSpaceNode) -> bool {
+        (ptr as u64 - self.mem_start) & (1 << (self.depth_offset - depth)) == 0
     }
 
-    fn take_or_divide(&mut self, depth: usize) -> Option<&'static mut FreeSpaceNode> {
-        if let Some(node) = self.nodes[depth].take() {
-            self.nodes[depth] = node.next.take();
+    fn take_or_divide(&mut self, depth: u64) -> Option<&'static mut FreeSpaceNode> {
+        if let Some(node) = self.nodes[depth as usize].take() {
+            self.nodes[depth as usize] = node.next.take();
             return Some(node);
         }
 
@@ -93,8 +95,8 @@ impl<const MAX_DEPTH: usize> BuddyAllocator<MAX_DEPTH> {
                 .compute_right_buddy_ptr(depth, free_space_node)
                 .expect("depth should be > 0");
 
-            free_space_node.next = self.nodes[depth].take();
-            self.nodes[depth] = Some(free_space_node);
+            free_space_node.next = self.nodes[depth as usize].take();
+            self.nodes[depth as usize] = Some(free_space_node);
             unsafe {
                 buddy_ptr.write(FreeSpaceNode::new());
                 &mut *buddy_ptr
@@ -104,14 +106,14 @@ impl<const MAX_DEPTH: usize> BuddyAllocator<MAX_DEPTH> {
 
     fn remove_ptr_from_list(
         &mut self,
-        depth: usize,
+        depth: u64,
         ptr: *mut FreeSpaceNode,
     ) -> Option<&'static mut FreeSpaceNode> {
-        if self.nodes[depth].is_none() {
+        if self.nodes[depth as usize].is_none() {
             return None;
         }
 
-        let mut previous = self.nodes[depth].as_mut().unwrap();
+        let mut previous = self.nodes[depth as usize].as_mut().unwrap();
         while let Some(ref mut node) = previous.next {
             if ptr == *node as *mut FreeSpaceNode {
                 let next = node.next.take();
@@ -124,7 +126,7 @@ impl<const MAX_DEPTH: usize> BuddyAllocator<MAX_DEPTH> {
         None
     }
 
-    fn merge(&mut self, depth: usize, ptr: *mut FreeSpaceNode) {
+    fn merge(&mut self, depth: u64, ptr: *mut FreeSpaceNode) {
         if depth == 0 {
             unsafe {
                 ptr.write(FreeSpaceNode::new());
@@ -143,10 +145,10 @@ impl<const MAX_DEPTH: usize> BuddyAllocator<MAX_DEPTH> {
             Some(_) => self.merge(depth - 1, if is_left { ptr } else { buddy_ptr }),
             None => {
                 let mut node = FreeSpaceNode::new();
-                node.next = self.nodes[depth].take();
+                node.next = self.nodes[depth as usize].take();
                 unsafe {
                     ptr.write(node);
-                    self.nodes[depth] = Some(&mut *ptr);
+                    self.nodes[depth as usize] = Some(&mut *ptr);
                 }
             }
         }
@@ -154,21 +156,28 @@ impl<const MAX_DEPTH: usize> BuddyAllocator<MAX_DEPTH> {
 }
 
 impl<const MAX_DEPTH: usize> BinaryAllocator for BuddyAllocator<MAX_DEPTH> {
-    fn alloc(&mut self, size: usize) -> Option<*mut u8> {
+    fn alloc(&mut self, size: u64) -> Option<*mut u8> {
         let depth = self.compute_depth(size)?;
         Some(self.take_or_divide(depth)? as *mut FreeSpaceNode as *mut u8)
     }
 
-    fn dealloc(&mut self, ptr: *mut u8, size: usize) {
+    fn dealloc(&mut self, ptr: *mut u8, size: u64) {
         let depth = self.compute_depth(size).unwrap();
         self.merge(depth, ptr as *mut FreeSpaceNode);
     }
 
-    fn minimum_block_size(&self) -> usize {
+    fn minimum_block_size(&self) -> u64 {
         self.minimum_block_size
     }
 
-    fn max_depth(&self) -> usize {
-        MAX_DEPTH
+    fn max_depth(&self) -> u64 {
+        MAX_DEPTH as u64
+    }
+}
+
+unsafe impl<const MAX_DEPTH: usize> FrameAllocator<Size4KiB> for BuddyAllocator<MAX_DEPTH> {
+    fn allocate_frame(&mut self) -> Option<PhysFrame> {
+        let ptr = self.alloc(PAGE_SIZE)?;
+        PhysFrame::from_start_address(MEMORY_MAPPER.translate_addr(VirtAddr::from_ptr(ptr))?).ok()
     }
 }

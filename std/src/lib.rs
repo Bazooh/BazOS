@@ -24,7 +24,7 @@ pub fn hlt_loop() -> ! {
 fn panic(info: &PanicInfo) -> ! {
     interrupts::disable();
     serial_println!("{}\n", info);
-    println!("{}", info);
+    // println!("{}", info);
     hlt_loop();
 }
 
