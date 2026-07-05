@@ -1,4 +1,3 @@
-use crate::serial_println;
 use core::arch::asm;
 
 #[repr(u64)]

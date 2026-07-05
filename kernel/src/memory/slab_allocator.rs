@@ -1,6 +1,4 @@
 use crate::memory::{FreeSpaceNode, PAGE_SIZE, binary_allocator::BinaryAllocator};
-use spin::Mutex;
-use x86_64::structures::paging::{FrameAllocator, PhysFrame, Size4KiB};
 
 pub const MINIMUM_BLOCK_SIZE: u64 = size_of::<FreeSpaceNode>() as u64;
 const SLAB_SIZE: u64 = PAGE_SIZE;

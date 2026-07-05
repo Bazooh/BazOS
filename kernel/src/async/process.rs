@@ -1,4 +1,3 @@
-use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use core::fmt::{Debug, Formatter};
 
@@ -9,18 +8,15 @@ use crate::memory::{MEMORY_MAPPER, PAGE_SIZE, PROGRAM_ALLOCATOR};
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::alloc::{Allocator, GlobalAlloc, Layout};
-use core::arch::asm;
 use core::ops::DerefMut;
-use core::ptr::{copy_nonoverlapping, null};
+use core::ptr::copy_nonoverlapping;
 use core::sync::atomic::{AtomicU64, Ordering};
 use spin::Mutex;
 use std::serial_println;
 use x86_64::VirtAddr;
 use x86_64::structures::paging::page::PageRange;
-use x86_64::structures::paging::page_table::PageTableEntry;
 use x86_64::structures::paging::{
-    FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame, Size4KiB,
-    Translate,
+    FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, Size4KiB, Translate,
 };
 
 pub struct ProcessWithoutMainThread {
@@ -52,7 +48,7 @@ impl ProcessWithoutMainThread {
     }
 
     pub fn with_main_thread_after_fork(
-        mut self,
+        self,
         forked_thread_id: ThreadId,
         stack_pointer: VirtAddr,
     ) -> Process {
@@ -240,22 +236,26 @@ impl Process {
 
     /// Safety: the desired Virtual Address range should not already be mapped
     pub unsafe fn user_mmap(&mut self, range: PageRange) {
-        self.mmap(
-            range,
-            &PROGRAM_ALLOCATOR,
-            PROGRAM_ALLOCATOR.frame_allocator(),
-        );
-        self.memory_regions.push(range);
+        unsafe {
+            self.mmap(
+                range,
+                &PROGRAM_ALLOCATOR,
+                PROGRAM_ALLOCATOR.frame_allocator(),
+            );
+            self.memory_regions.push(range);
+        }
     }
 
     /// Safety: the desired Virtual Address range should not already be mapped
     pub unsafe fn user_stack_mmap(&mut self, range: PageRange, thread_id: ThreadId) {
-        self.mmap(
-            range,
-            &PROGRAM_ALLOCATOR,
-            PROGRAM_ALLOCATOR.frame_allocator(),
-        );
-        self.threads_stack.insert(thread_id, range);
+        unsafe {
+            self.mmap(
+                range,
+                &PROGRAM_ALLOCATOR,
+                PROGRAM_ALLOCATOR.frame_allocator(),
+            );
+            self.threads_stack.insert(thread_id, range);
+        }
     }
 
     /// Safety: the desired Virtual Address range should not already be mapped
@@ -265,35 +265,40 @@ impl Process {
         allocator: impl Allocator,
         frame_allocator: &Mutex<impl FrameAllocator<Size4KiB>>,
     ) {
-        let page_kernel_space = Page::<Size4KiB>::from_start_address(VirtAddr::from_ptr(
-            allocator
-                .allocate(
-                    Layout::from_size_align((range.len() * PAGE_SIZE) as usize, PAGE_SIZE as usize)
+        unsafe {
+            let page_kernel_space = Page::<Size4KiB>::from_start_address(VirtAddr::from_ptr(
+                allocator
+                    .allocate(
+                        Layout::from_size_align(
+                            (range.len() * PAGE_SIZE) as usize,
+                            PAGE_SIZE as usize,
+                        )
                         .expect("layout not aligned"),
-                )
-                .expect("memory allocation failed")
-                .as_ptr(),
-        ))
-        .expect("allocation did not start at the start of a page");
+                    )
+                    .expect("memory allocation failed")
+                    .as_ptr(),
+            ))
+            .expect("allocation did not start at the start of a page");
 
-        for (i, page) in range.enumerate() {
-            let frame = MEMORY_MAPPER
-                .translate_page(page_kernel_space + i as u64)
-                .expect("invalid memory mapping address");
+            for (i, page) in range.enumerate() {
+                let frame = MEMORY_MAPPER
+                    .translate_page(page_kernel_space + i as u64)
+                    .expect("invalid memory mapping address");
 
-            serial_println!("Mapping {:?} to {:?}", page, frame);
+                serial_println!("Mapping {:?} to {:?}", page, frame);
 
-            self.page_table
-                .map_to(
-                    page,
-                    frame,
-                    PageTableFlags::PRESENT
-                        | PageTableFlags::WRITABLE
-                        | PageTableFlags::USER_ACCESSIBLE,
-                    frame_allocator.lock().deref_mut(),
-                )
-                .unwrap()
-                .flush();
+                self.page_table
+                    .map_to(
+                        page,
+                        frame,
+                        PageTableFlags::PRESENT
+                            | PageTableFlags::WRITABLE
+                            | PageTableFlags::USER_ACCESSIBLE,
+                        frame_allocator.lock().deref_mut(),
+                    )
+                    .unwrap()
+                    .flush();
+            }
         }
     }
 

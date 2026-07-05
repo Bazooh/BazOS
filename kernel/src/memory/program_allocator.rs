@@ -5,7 +5,7 @@ use core::{
 
 use crate::memory::memory_mapper::PageMapper;
 use crate::memory::{
-    MEMORY_MAPPER, PAGE_SIZE,
+    PAGE_SIZE,
     binary_allocator::BinaryAllocator,
     buddy_allocator::{BuddyAllocator, compute_max_depth},
 };
@@ -13,9 +13,7 @@ use alloc::alloc::{AllocError, Allocator};
 use spin::Mutex;
 use x86_64::{
     VirtAddr,
-    structures::paging::{
-        FrameAllocator, PageTableFlags, PhysFrame, Size4KiB, Translate, mapper::MapToError,
-    },
+    structures::paging::{FrameAllocator, PageTableFlags, Size4KiB, mapper::MapToError},
 };
 
 pub const PROGRAM_START: u64 = 0x5000_0000_0000;

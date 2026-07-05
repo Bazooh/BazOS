@@ -5,13 +5,11 @@ use crate::memory::to_virtual_address;
 use conquer_once::spin::OnceCell;
 use core::arch::asm;
 use core::ops::{Deref, DerefMut};
-use std::serial_println;
 use x86_64::registers::control::Cr3;
-use x86_64::structures::paging::mapper::{MapToError, TranslateError};
+use x86_64::structures::paging::mapper::MapToError;
 use x86_64::structures::paging::page_table::PageTableEntry;
 use x86_64::structures::paging::{
     FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame, Size4KiB,
-    Translate,
 };
 use x86_64::{PhysAddr, VirtAddr};
 
@@ -88,12 +86,14 @@ impl MemoryMapper {
     }
 
     pub unsafe fn switch_to_kernel(&self) {
-        self.switch_to(
-            self.level_4_table_frame
-                .get()
-                .expect("Memory mapper not initialized")
-                .start_address(),
-        );
+        unsafe {
+            self.switch_to(
+                self.level_4_table_frame
+                    .get()
+                    .expect("Memory mapper not initialized")
+                    .start_address(),
+            );
+        }
     }
 
     pub unsafe fn switch_to(&self, page_table_addr: PhysAddr) -> PhysAddr {

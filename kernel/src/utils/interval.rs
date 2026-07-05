@@ -8,16 +8,6 @@ pub struct Interval {
 }
 
 impl Interval {
-    pub fn new(start: u64, end: u64) -> Option<Self> {
-        if start > end {
-            return None;
-        }
-        Some(Interval {
-            start: DebugHex(start),
-            end: DebugHex(end),
-        })
-    }
-
     pub fn with_size(start: u64, size: u64) -> Self {
         Interval {
             start: DebugHex(start),
@@ -29,20 +19,12 @@ impl Interval {
         self.start.0 <= other.end.0 && self.end.0 >= other.start.0
     }
 
-    pub fn contains(&self, point: u64) -> bool {
-        self.start.0 <= point && self.end.0 >= point
-    }
-
     pub fn size(&self) -> u64 {
         self.end.0 - self.start.0
     }
 
     pub fn start(&self) -> u64 {
         self.start.0
-    }
-
-    pub fn end(&self) -> u64 {
-        self.end.0
     }
 }
 

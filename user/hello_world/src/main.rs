@@ -1,9 +1,8 @@
 #![no_std]
 #![no_main]
 
-use core::arch::asm;
 use std::fork::fork;
-use std::{println, serial_println};
+use std::println;
 
 #[unsafe(no_mangle)]
 fn _start() {

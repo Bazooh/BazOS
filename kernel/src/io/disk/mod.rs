@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 mod bitmap;
 pub mod driver;
 mod file;

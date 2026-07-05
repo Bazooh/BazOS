@@ -1,16 +1,8 @@
-use core::{alloc::Layout, ops::DerefMut};
-
-use crate::memory::{MEMORY_MAPPER, PAGE_SIZE, PROGRAM_ALLOCATOR};
-use core::alloc::Allocator;
+use crate::memory::{MEMORY_MAPPER, PAGE_SIZE};
 use core::arch::{asm, naked_asm};
 use core::ops::Deref;
 use std::serial_println;
-use x86_64::{
-    PhysAddr, VirtAddr,
-    structures::paging::{
-        Mapper, OffsetPageTable, Page, PageTableFlags, PhysFrame, Size4KiB, Translate,
-    },
-};
+use x86_64::{PhysAddr, VirtAddr, structures::paging::Translate};
 
 pub const STACK_SIZE: u64 = 3 * PAGE_SIZE;
 
@@ -126,13 +118,13 @@ impl Thread {
 
                 trampoline = in(reg) Self::exit_trampoline as *const () as u64,
                 rip        = in(reg) entry_point.as_u64(),
-                cs         = in(reg) 0x8,
-                rflags     = in(reg) 0x202,
-                ss         = in(reg) 0x10,
-                zero       = in(reg) 0,
-                old_cr3    = in(reg) 0,
+                cs         = in(reg) 0x8u64,
+                rflags     = in(reg) 0x202u64,
+                ss         = in(reg) 0x10u64,
+                zero       = in(reg) 0u64,
+                old_cr3    = in(reg) 0u64,
                 cr3        = in(reg) page_table_addr.as_u64(),
-                old_rsp    = in(reg) 0,
+                old_rsp    = in(reg) 0u64,
                 rsp     = inout(reg) rsp,
             )
         };
@@ -168,9 +160,9 @@ impl Thread {
             "mov cr3, {old_cr3}",
 
             rax        = in(reg) rax,
-            old_cr3    = in(reg) 0,
+            old_cr3    = in(reg) 0u64,
             cr3        = in(reg) page_table_addr.as_u64(),
-            old_rsp    = in(reg) 0,
+            old_rsp    = in(reg) 0u64,
             rsp     = inout(reg) rsp,
             )
         };

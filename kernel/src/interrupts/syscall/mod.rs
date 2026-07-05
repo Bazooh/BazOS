@@ -10,6 +10,7 @@ mod out;
 
 #[repr(u64)]
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum SyscallNumber {
     Out = 1,
     Fork = 2,

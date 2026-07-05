@@ -3,7 +3,7 @@ use core::fmt;
 use crate::interrupts::without_interrupts;
 use lazy_static::lazy_static;
 use spin::Mutex;
-use std::{serial_print, serial_println};
+use std::serial_print;
 use volatile::Volatile;
 
 #[allow(dead_code)]

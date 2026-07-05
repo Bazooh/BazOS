@@ -2,8 +2,8 @@ use crate::r#async::thread::Thread;
 use alloc::sync::Arc;
 use core::mem::MaybeUninit;
 use core::ops::{Deref, DerefMut};
+use core::sync::atomic::AtomicU32;
 use core::sync::atomic::Ordering::Relaxed;
-use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use spin::Mutex;
 use std::serial_println;
 
