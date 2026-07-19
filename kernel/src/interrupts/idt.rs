@@ -1,27 +1,30 @@
+use alloc::boxed::Box;
+use bit_field::BitField;
+use core::fmt::UpperHex;
 use core::{
     arch::{asm, naked_asm},
     fmt::{Debug, Display, Formatter, LowerHex},
     ops::{Deref, DerefMut},
     ptr::{addr_of_mut, read_unaligned},
 };
-
-use bit_field::BitField;
 use lazy_static::lazy_static;
 use x86_64::{
-    VirtAddr,
-    instructions::{segmentation, tables::lidt},
+    PhysAddr, VirtAddr,
+    instructions::{port::Port, segmentation, tables::lidt},
     registers::{control, segmentation::Segment},
     structures::{DescriptorTablePointer, gdt::SegmentSelector},
 };
 
-use super::{
-    breakpoint::breakpoint_handler,
-    divide_by_zero::divide_by_zero_handler,
-    double_fault::double_fault_handler,
-    hardware::{HardwareInterrupt, PICS, keyboard::keyboard_handler, timer::timer_handler},
-    invalid_opcode::invalid_opcode_handler,
-    page_fault::page_fault_handler,
-};
+use crate::r#async::ThreadRef;
+use crate::interrupts::exceptions::breakpoint::breakpoint_handler;
+use crate::interrupts::exceptions::divide_by_zero::divide_by_zero_handler;
+use crate::interrupts::exceptions::double_fault::double_fault_handler;
+use crate::interrupts::exceptions::general_fault::general_fault_handler;
+use crate::interrupts::exceptions::invalid_opcode::invalid_opcode_handler;
+use crate::interrupts::exceptions::page_fault::page_fault_handler;
+use crate::interrupts::hardware::keyboard::keyboard_handler;
+use crate::interrupts::hardware::timer::{context_switch, timer_handler};
+use crate::interrupts::hardware::{HardwareInterrupt, PICS};
 use crate::{
     r#async::thread::Thread,
     interrupts::syscall::{SyscallNumber, syscall_handler},
@@ -200,22 +203,19 @@ macro_rules! handler {
         wrapper
     }};
 }
-
-type TimerExceptionHandler = extern "C" fn(&ExceptionStackFrame) -> *mut Thread;
-
 macro_rules! handler_for_timer {
-    ($name: ident) => {{
+    ($handler: ident, $context_switch: ident) => {{
         // Ensure type safety
-        $name as TimerExceptionHandler;
+        $handler as extern "C" fn(&ExceptionStackFrame) -> Option<Box<ThreadRef>>;
+        $context_switch as extern "C" fn(VirtAddr, Box<ThreadRef>) -> (VirtAddr, PhysAddr);
 
         #[unsafe(naked)]
         extern "C" fn wrapper() -> () {
             naked_asm!(
-                // "int 0x81",
                 save_scratch_reg!(),
                 "mov rdi, rsp",
                 "add rdi, 8*9",
-                "call {func}",
+                "call {handler}", // -> Option<Box<ThreadRef>>
                 "cmp rax, 0",
                 "jne switch",
 
@@ -226,17 +226,17 @@ macro_rules! handler_for_timer {
                 // Context switch
                 "switch:",
                 save_unscratched_reg!(),
-                "mov rdi, gs:0",
-                "mov [rdi], rsp", // Save `rsp` into current_thread (gs:0)
-                "mov gs:0, rax",  // Switch current_thread
-                "mov rsp, [rax]", // Restore `rsp` into current_thread
-                "mov rax, [rax + 0x8]", // rax = page_table_addr
-                "mov cr3, rax",  // switch page table
+                "mov rdi, rsp",
+                "mov rsi, rax",
+                "call {context_switch}", // -> (VirtAddr, PhysAddr)
+                "mov rsp, rax", // switch stack
+                "mov cr3, rdx", // switch page table
                 restore_unscratched_reg!(),
                 restore_scratch_reg!(),
                 "iretq",
 
-                func = sym $name
+                handler = sym $handler,
+                context_switch = sym $context_switch,
             );
         }
         wrapper
@@ -271,7 +271,7 @@ macro_rules! handler_with_error_code {
 }
 
 type SyscallHandler =
-    extern "C" fn(usize, usize, usize, SyscallNumber, &ExceptionStackFrame) -> isize;
+    unsafe extern "C" fn(u64, u64, u64, u64, SyscallNumber, &ExceptionStackFrame) -> i64;
 
 macro_rules! handler_for_syscall {
     ($name: ident) => {{
@@ -281,7 +281,7 @@ macro_rules! handler_for_syscall {
         #[unsafe(naked)]
         extern "C" fn wrapper() -> () {
             naked_asm!(
-                "mov r8, rsp",     // 5th arg: &ExceptionStackFrame
+                "mov r9, rsp",     // 6th arg: &ExceptionStackFrame
                 "sub rsp, 8",      // Align stack
                 "call {func}",
                 "add rsp, 8",      // Undo `Align stack`
@@ -293,14 +293,25 @@ macro_rules! handler_for_syscall {
     }};
 }
 
-#[derive(Debug)]
 #[repr(C)]
 pub struct ExceptionStackFrame {
     pub instruction_pointer: VirtAddr,
-    code_segment: DebugHex<u64>,
-    cpu_flags: DebugHex<u64>,
+    pub code_segment: u64,
+    pub cpu_flags: u64,
     pub stack_pointer: VirtAddr,
-    stack_segment: DebugHex<u64>,
+    pub stack_segment: u64,
+}
+
+impl Debug for ExceptionStackFrame {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ExceptionStackFrame")
+            .field("instruction_pointer", &self.instruction_pointer)
+            .field("code_segment", &format_args!("{:x}", &self.code_segment))
+            .field("cpu_flags", &format_args!("{:x}", &self.cpu_flags))
+            .field("stack_pointer", &self.stack_pointer)
+            .field("stack_segment", &format_args!("{:x}", &self.stack_segment))
+            .finish()
+    }
 }
 
 lazy_static! {
@@ -311,16 +322,18 @@ lazy_static! {
         idt.set_handler(6, handler!(invalid_opcode_handler));
         idt.set_handler(8, handler_with_error_code!(double_fault_handler))
             .set_stack_index(0);
+        idt.set_handler(13, handler_with_error_code!(general_fault_handler));
         idt.set_handler(14, handler_with_error_code!(page_fault_handler));
         idt.set_handler(
             HardwareInterrupt::Timer as u8,
-            handler_for_timer!(timer_handler),
+            handler_for_timer!(timer_handler, context_switch),
         );
         idt.set_handler(
             HardwareInterrupt::Keyboard as u8,
             handler!(keyboard_handler),
         );
-        idt.set_handler(0x80, handler_for_syscall!(syscall_handler));
+        idt.set_handler(0x80, handler_for_syscall!(syscall_handler))
+            .set_privilege_level(3);
         idt
     };
 }
@@ -329,4 +342,21 @@ lazy_static! {
 pub fn init_idt() {
     IDT.load();
     unsafe { PICS.lock().initialize() };
+    init_timer(1000); // Fire 1'000 per second (each ms)
+}
+
+/// frequency being the number of times the timer will fire per second
+pub fn init_timer(frequency: u64) {
+    let divisor = 1193182 / frequency;
+
+    unsafe {
+        let mut cmd = Port::new(0x43);
+        let mut data = Port::new(0x40);
+
+        // channel 0, lobyte/hibyte, mode 3 (square wave)
+        cmd.write(0x36u8);
+
+        data.write((divisor & 0xFF) as u8);
+        data.write((divisor >> 8) as u8);
+    }
 }

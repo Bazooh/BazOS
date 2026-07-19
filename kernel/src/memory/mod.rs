@@ -1,20 +1,21 @@
 use bootloader::bootinfo::MemoryMap;
 use spin::Mutex;
 
-use crate::memory::frame_allocator::{BootLoaderFrameAllocator, FRAME_ALLOCATOR};
+use crate::memory::bootloader_allocator::{BootLoaderFrameAllocator, FRAME_ALLOCATOR};
 
-pub use crate::memory::memory_mapper::MEMORY_MAPPER;
+use crate::memory::memory_mapper::MemoryMapper;
+pub use bootloader_allocator::to_virtual_address;
 pub use composite_allocator::KernelAllocator;
-pub use frame_allocator::to_virtual_address;
 pub use heap::KERNEL_ALLOCATOR;
 pub use program_allocator::PROGRAM_ALLOCATOR;
 
+pub mod allocator;
 mod binary_allocator;
+mod bootloader_allocator;
 mod buddy_allocator;
 mod composite_allocator;
-mod frame_allocator;
 mod heap;
-mod memory_mapper;
+pub mod memory_mapper;
 mod program_allocator;
 mod slab_allocator;
 
@@ -28,7 +29,7 @@ pub fn init_memory(physical_memory_offset: u64, memory_map: &'static MemoryMap) 
         .expect("Frame allocator already initialized");
 
     unsafe {
-        MEMORY_MAPPER.init(physical_memory_offset);
+        MemoryMapper::init(physical_memory_offset);
     }
 }
 

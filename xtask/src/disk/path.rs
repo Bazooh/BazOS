@@ -20,8 +20,8 @@ impl Path {
     }
 
     pub fn add(&self, name: String) -> Self {
-        if name.starts_with("/") {
-            Path::new(format!("{}{}", self.path, name))
+        if self.path.is_empty() {
+            Path::new(name)
         } else {
             Path::new(format!("{}/{}", self.path, name))
         }

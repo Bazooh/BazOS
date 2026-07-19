@@ -1,6 +1,3 @@
-use lazy_static::lazy_static;
-use pc_keyboard::{DecodedKey, KeyCode, Keyboard, ScancodeSet1, ScancodeSet2, layouts};
-use spin::Mutex;
 use x86_64::instructions::port::Port;
 
 use super::{HardwareInterrupt, PICS};

@@ -13,7 +13,7 @@ fn run(cmd: &mut Command) {
     assert!(status.success());
 }
 
-const BINARIES: [&str; 1] = ["hello_world"];
+const BINARIES: [&str; 3] = ["hello_world", "terminal", "commands/echo"];
 const DISK_PATH: &str = "disk/disk.img";
 
 const MAGIC_NUMBER: u64 = 0xBA2_05;
@@ -58,10 +58,18 @@ fn main() {
             .args(["build", "--release"])
             .current_dir(format!("user/{}", name))
             .env("RUSTFLAGS", "-C linker=/Users/aymeric/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-lld -C link-arg=-Tlinker.ld"));
-        let content = read(format!("target/x86_64-BazOS-user/release/{}", name))
-            .expect("Failed to read file");
-        root.add_file(name, content.into_boxed_slice()).unwrap();
+        let content = read(format!(
+            "target/x86_64-BazOS-user/release/{}",
+            name.split('/').last().unwrap()
+        ))
+        .expect("Failed to read file");
+
+        // TODO: implement directories
+        root.add_file(name.replace('/', "_").as_str(), content.into_boxed_slice())
+            .unwrap();
     }
+
+    println!("{:#?}", root);
 
     let mut inodes: HashMap<&Node, (usize, usize)> = HashMap::new();
     let mut data_chunks: Vec<Block> = Vec::new();

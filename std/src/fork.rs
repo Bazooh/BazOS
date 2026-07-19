@@ -1,7 +1,8 @@
-use crate::syscall::{SyscallNumber, syscall};
+use crate::syscall::SyscallNumber::Fork;
+use crate::syscall::syscall;
 
 #[derive(Debug)]
-pub struct Pid(usize);
+pub struct Pid(pub u64);
 
 impl Pid {
     pub const fn root() -> Self {
@@ -12,15 +13,15 @@ impl Pid {
         self.0 == 0
     }
 
-    pub fn pid(&self) -> usize {
+    pub fn pid(&self) -> u64 {
         self.0
     }
 }
 
 pub fn fork() -> Option<Pid> {
-    match syscall(SyscallNumber::Fork, 0, 0, 0) {
+    match syscall(Fork, 0, 0, 0, 0) {
         0 => None,
-        pid if pid > 0 => Some(Pid(pid as usize)),
+        pid if pid > 0 => Some(Pid(pid as u64)),
         _ => unreachable!(),
     }
 }

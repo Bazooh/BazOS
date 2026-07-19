@@ -3,53 +3,54 @@ use core::arch::asm;
 use crate::r#async::threads_array::ThreadRef;
 use crate::r#async::threads_array::ThreadsArray;
 use crate::r#async::{process::Process, thread::Thread};
+use alloc::sync::Arc;
 use alloc::{boxed::Box, collections::btree_map::BTreeMap};
 use conquer_once::spin::OnceCell;
+use core::sync::atomic::{AtomicU64, Ordering};
 use spin::{Mutex, MutexGuard};
 
 static SCHEDULER: OnceCell<Mutex<Scheduler>> = OnceCell::uninit();
 
+static LAST_PID: AtomicU64 = AtomicU64::new(0);
+
 pub struct Scheduler {
-    processes: BTreeMap<u64, Process>,
+    processes: BTreeMap<u64, Arc<Mutex<Process>>>,
     threads: ThreadsArray,
-    last_pid: u64,
 }
 
 impl Scheduler {
     fn new() -> Scheduler {
         Scheduler {
             processes: BTreeMap::new(),
-            last_pid: 0,
             threads: ThreadsArray::new(),
         }
     }
 
     pub fn lock<'a>() -> MutexGuard<'a, Scheduler> {
+        // TODO: This should probably disable interrupts to avoid deadlock
         SCHEDULER.get().expect("Scheduler not initialized").lock()
     }
 
-    pub fn next_pid(&mut self) -> u64 {
-        self.last_pid += 1;
-        self.last_pid
+    pub fn next_pid() -> u64 {
+        LAST_PID.fetch_add(1, Ordering::Relaxed)
     }
 
     pub fn add_process(&mut self, process: Process) {
-        self.processes.insert(process.pid(), process);
+        self.processes
+            .insert(process.pid(), Arc::new(Mutex::new(process)));
     }
 
-    pub fn get_process(&self, pid: u64) -> Option<&Process> {
-        self.processes.get(&pid)
-    }
-
-    pub fn get_process_mut(&mut self, pid: u64) -> Option<&mut Process> {
-        self.processes.get_mut(&pid)
+    pub fn get_process(&mut self, pid: u64) -> Option<Arc<Mutex<Process>>> {
+        Some(Arc::clone(self.processes.get(&pid)?))
     }
 
     pub fn add_thread(&mut self, thread: Thread) {
-        self.threads.add(thread).expect("Max threads exceeded");
+        self.threads
+            .add(Arc::new(Mutex::new(thread)))
+            .expect("Max threads exceeded");
     }
 
-    pub fn pick_thread(&mut self) -> Option<ThreadRef> {
+    pub fn pick_thread(&self) -> Option<ThreadRef> {
         self.threads.pick()
     }
 }

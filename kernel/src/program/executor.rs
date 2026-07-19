@@ -1,10 +1,10 @@
 use core::ptr::{copy_nonoverlapping, write_bytes};
 
-use crate::r#async::scheduling::scheduler::Scheduler;
+use crate::memory::memory_mapper::MemoryMapper;
 use crate::{
     r#async::process::Process,
     fs::{elf::header::ElfHeader, file::File},
-    memory::{MEMORY_MAPPER, PAGE_SIZE},
+    memory::PAGE_SIZE,
     utils::interval::{Interval, merge_intervals},
 };
 use alloc::{string::String, vec::Vec};
@@ -17,7 +17,7 @@ use x86_64::{
 pub struct ProgramExecutor {}
 
 impl ProgramExecutor {
-    pub fn execute(file: impl File) {
+    pub fn execute(file: impl File, args: &[&str], parent_pid: u64) -> Process {
         let content = file.read();
         let elf_header = ElfHeader::parse(&content).expect("Not executable");
 
@@ -42,8 +42,12 @@ impl ProgramExecutor {
         }
         let intervals = merge_intervals(intervals);
 
-        let mut process = Process::user(String::from(file.name()), 0, elf_header.entry_point())
-            .with_main_thread();
+        let mut process = Process::user(
+            String::from(file.name()),
+            parent_pid,
+            elf_header.entry_point(),
+            args,
+        );
 
         for interval in intervals {
             let start = Page::from_start_address(VirtAddr::new(interval.start()))
@@ -52,8 +56,9 @@ impl ProgramExecutor {
                 process.user_mmap(PageRange {
                     start,
                     end: start + interval.size() / PAGE_SIZE,
-                });
+                })
             }
+            .expect("mapped memory failed");
         }
 
         for program_header in elf_header.program_headers() {
@@ -61,14 +66,13 @@ impl ProgramExecutor {
                 continue;
             }
 
-            let dst_ptr = MEMORY_MAPPER
-                .to_virt(
-                    process
-                        .page_table()
-                        .translate_addr(program_header.virt_addr())
-                        .expect("failed to translate"),
-                )
-                .as_mut_ptr();
+            let dst_ptr = MemoryMapper::to_virt(
+                process
+                    .page_table()
+                    .translate_addr(program_header.virt_addr())
+                    .expect("failed to translate"),
+            )
+            .as_mut_ptr();
             let mem_size = program_header.mem_size();
             let file_size = program_header.file_size();
 
@@ -83,6 +87,6 @@ impl ProgramExecutor {
             }
         }
 
-        Scheduler::lock().add_process(process);
+        process
     }
 }

@@ -3,6 +3,8 @@ members = [
     "kernel",
     "std",
     "user/hello_world",
-    "xtask",
+    "user/terminal",
+    "user/commands/echo",
+    "xtask", "main_macro",
 ]
 resolver = "3"

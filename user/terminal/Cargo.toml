@@ -1,0 +1,8 @@
+[package]
+name = "terminal"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+std = { path = "../../std" }
+main_macro = { path = "../../main_macro" }

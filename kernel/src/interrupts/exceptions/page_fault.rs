@@ -1,8 +1,6 @@
-use core::{arch::asm, fmt::Display};
-
 use crate::{interrupts::idt::ExceptionStackFrame, println};
 use bit_field::BitField;
-use std::serial_println;
+use core::{arch::asm, fmt::Display};
 use x86_64::registers::control;
 
 struct PageFaultErrorCode(u8);
@@ -18,21 +16,20 @@ impl PageFaultErrorCode {
 
 impl Display for PageFaultErrorCode {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let mut first = true;
         for i in 0..5 {
-            if self.0.get_bit(i) {
-                if !first {
-                    write!(f, ", ")?;
-                }
-                first = false;
-                match i {
-                    0 => write!(f, "PROTECTION_VIOLATION")?,
-                    1 => write!(f, "CAUSED_BY_WRITE")?,
-                    2 => write!(f, "USER_MODE")?,
-                    3 => write!(f, "MALFORMED_TABLE")?,
-                    4 => write!(f, "INSTRUCTION_FETCH")?,
-                    _ => unreachable!(),
-                }
+            let set = self.0.get_bit(i);
+            match (i, set) {
+                (0, true) => {}
+                (0, false) => write!(f, "NOT MAPPED, ")?,
+                (1, true) => write!(f, "WRITE, ")?,
+                (1, false) => write!(f, "READ, ")?,
+                (2, true) => write!(f, "USER, ")?,
+                (2, false) => write!(f, "KERNEL, ")?,
+                (3, true) => write!(f, "MALFORMED TABLE")?,
+                (3, false) => {}
+                (4, true) => write!(f, "INSTRUCTION FETCH")?,
+                (4, false) => {}
+                _ => unreachable!(),
             }
         }
         Ok(())

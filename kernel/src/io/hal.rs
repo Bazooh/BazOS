@@ -3,10 +3,10 @@ use core::{
     ptr::NonNull,
 };
 
+use crate::memory::memory_mapper::{MemoryMapper, MemoryTranslator};
+use crate::memory::{KERNEL_ALLOCATOR, PAGE_SIZE};
 use virtio_drivers::{BufferDirection, Hal};
-use x86_64::{PhysAddr, VirtAddr, structures::paging::Translate};
-
-use crate::memory::{KERNEL_ALLOCATOR, MEMORY_MAPPER, PAGE_SIZE, to_virtual_address};
+use x86_64::{PhysAddr, VirtAddr};
 
 pub struct HalImpl;
 
@@ -19,8 +19,8 @@ unsafe impl Hal for HalImpl {
 
         let layout = Layout::array::<u8>(pages * PAGE_SIZE as usize).unwrap();
         let virt_ptr = unsafe { KERNEL_ALLOCATOR.alloc_zeroed(layout) };
-        let phys_addr = MEMORY_MAPPER
-            .translate_addr(VirtAddr::from_ptr(virt_ptr))
+        let phys_addr = MemoryMapper::kernel()
+            .to_phys(VirtAddr::from_ptr(virt_ptr))
             .expect("Translation failed");
 
         (
@@ -42,19 +42,16 @@ unsafe impl Hal for HalImpl {
     }
 
     unsafe fn mmio_phys_to_virt(paddr: virtio_drivers::PhysAddr, _size: usize) -> NonNull<u8> {
-        NonNull::new(
-            to_virtual_address(PhysAddr::new(paddr), MEMORY_MAPPER.phys_offset().as_u64())
-                .as_mut_ptr(),
-        )
-        .expect("Address is null")
+        NonNull::new(MemoryMapper::to_virt(PhysAddr::new(paddr)).as_mut_ptr())
+            .expect("Address is null")
     }
 
     unsafe fn share(
         buffer: NonNull<[u8]>,
         _direction: BufferDirection,
     ) -> virtio_drivers::PhysAddr {
-        MEMORY_MAPPER
-            .translate_addr(VirtAddr::from_ptr(buffer.as_ptr()))
+        MemoryMapper::current()
+            .to_phys(VirtAddr::from_ptr(buffer.as_ptr()))
             .expect("Buffer is not in memory")
             .as_u64()
     }

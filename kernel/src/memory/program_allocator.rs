@@ -1,19 +1,17 @@
-use core::{
-    alloc::{GlobalAlloc, Layout},
-    ptr::{NonNull, null_mut, slice_from_raw_parts_mut},
-};
-
+use crate::memory::allocator::Allocator;
+use crate::memory::binary_allocator::BinaryAllocator;
 use crate::memory::memory_mapper::PageMapper;
 use crate::memory::{
     PAGE_SIZE,
-    binary_allocator::BinaryAllocator,
     buddy_allocator::{BuddyAllocator, compute_max_depth},
 };
-use alloc::alloc::{AllocError, Allocator};
-use spin::Mutex;
+use core::ptr::write_bytes;
+use spin::{Mutex, MutexGuard};
+use x86_64::structures::paging::Page;
+use x86_64::structures::paging::page::PageRange;
 use x86_64::{
     VirtAddr,
-    structures::paging::{FrameAllocator, PageTableFlags, Size4KiB, mapper::MapToError},
+    structures::paging::{FrameAllocator, PageTableFlags, Size4KiB},
 };
 
 pub const PROGRAM_START: u64 = 0x5000_0000_0000;
@@ -43,43 +41,51 @@ impl ProgramAllocator {
     }
 }
 
-unsafe impl GlobalAlloc for ProgramAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let size = self.allocator.lock().compute_size(layout);
+impl Allocator for &ProgramAllocator {
+    fn allocate_frames(&self, n_frames: u64) -> Option<PageRange> {
         self.allocator
             .lock()
-            .alloc(size)
-            .unwrap_or_else(|| null_mut())
+            .alloc(n_frames * PAGE_SIZE)
+            .map(|ptr| {
+                let page = Page::from_start_address(VirtAddr::from_ptr(ptr)).unwrap();
+                PageRange {
+                    start: page,
+                    end: page + n_frames,
+                }
+            })
     }
 
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        let size = self.allocator.lock().compute_size(layout);
-        self.allocator.lock().dealloc(ptr, size);
+    fn allocate_frames_zeroed(&self, n_frames: u64) -> Option<PageRange> {
+        let pages = self.allocate_frames(n_frames)?;
+        unsafe {
+            write_bytes(
+                pages.start.start_address().as_mut_ptr::<u8>(),
+                0,
+                (n_frames * PAGE_SIZE) as usize,
+            )
+        };
+        Some(pages)
+    }
+
+    fn deallocate_frames(&self, range: PageRange) {
+        self.allocator
+            .lock()
+            .dealloc(range.start.start_address().as_mut_ptr(), range.len())
+    }
+
+    fn lock_frame_allocator(&self) -> MutexGuard<'_, impl FrameAllocator<Size4KiB>> {
+        self.allocator.lock()
     }
 }
 
-unsafe impl Allocator for &ProgramAllocator {
-    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
-        let ptr = unsafe { self.alloc(layout) };
-        if ptr.is_null() {
-            return Err(AllocError);
-        }
-        Ok(NonNull::new(slice_from_raw_parts_mut(ptr, layout.size())).unwrap())
-    }
-
-    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-        unsafe { self.dealloc(ptr.as_ptr(), layout) };
-    }
-}
-
-pub fn init_program_allocator(page_mapper: &mut PageMapper) -> Result<(), MapToError<Size4KiB>> {
-    page_mapper.map(
-        VirtAddr::new(PROGRAM_START),
-        PROGRAM_SIZE,
-        PageTableFlags::WRITABLE,
-    )?;
+pub fn init_program_allocator(page_mapper: &mut PageMapper) {
+    page_mapper
+        .map(
+            VirtAddr::new(PROGRAM_START),
+            PROGRAM_SIZE,
+            PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE,
+        )
+        .expect("Memory mapping failed");
 
     PROGRAM_ALLOCATOR.init();
-
-    Ok(())
 }

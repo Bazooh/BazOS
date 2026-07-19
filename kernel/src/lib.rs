@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 #![no_std]
 #![no_main]
-#![feature(allocator_api, custom_test_frameworks, unboxed_closures)]
+#![feature(custom_test_frameworks, unboxed_closures)]
 #![test_runner(std::tests::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
@@ -22,6 +22,7 @@ use crate::gdt::init_gdt;
 use crate::memory::init_memory;
 
 pub mod r#async;
+mod cpu;
 pub mod fs;
 mod gdt;
 mod interrupts;

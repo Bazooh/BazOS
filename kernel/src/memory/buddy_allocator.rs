@@ -1,6 +1,7 @@
-use crate::memory::{FreeSpaceNode, MEMORY_MAPPER, PAGE_SIZE, binary_allocator::BinaryAllocator};
+use crate::memory::memory_mapper::{MemoryMapper, MemoryTranslator};
+use crate::memory::{FreeSpaceNode, PAGE_SIZE, binary_allocator::BinaryAllocator};
 use x86_64::VirtAddr;
-use x86_64::structures::paging::{FrameAllocator, PhysFrame, Size4KiB, Translate};
+use x86_64::structures::paging::{FrameAllocator, PhysFrame, Size4KiB};
 
 pub struct BuddyAllocator<const MAX_DEPTH: usize> {
     nodes: [Option<&'static mut FreeSpaceNode>; MAX_DEPTH],
@@ -178,6 +179,7 @@ impl<const MAX_DEPTH: usize> BinaryAllocator for BuddyAllocator<MAX_DEPTH> {
 unsafe impl<const MAX_DEPTH: usize> FrameAllocator<Size4KiB> for BuddyAllocator<MAX_DEPTH> {
     fn allocate_frame(&mut self) -> Option<PhysFrame> {
         let ptr = self.alloc(PAGE_SIZE)?;
-        PhysFrame::from_start_address(MEMORY_MAPPER.translate_addr(VirtAddr::from_ptr(ptr))?).ok()
+        PhysFrame::from_start_address(MemoryMapper::kernel().to_phys(VirtAddr::from_ptr(ptr))?) // TODO: Check this
+            .ok()
     }
 }

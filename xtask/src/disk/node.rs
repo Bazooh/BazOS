@@ -1,10 +1,11 @@
+use crate::disk::{BLOCK_SIZE, path::Path};
+use std::fmt::Debug;
 use std::{
     collections::HashMap,
+    fmt,
     hash::{Hash, Hasher},
     iter::once,
 };
-
-use crate::disk::{BLOCK_SIZE, path::Path};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum Node {
@@ -12,11 +13,20 @@ pub enum Node {
     Dir(DirNode),
 }
 
-#[derive(Debug, Eq)]
+#[derive(Eq)]
 pub struct FileNode {
     name: String,
     path: Path,
     content: Box<[u8]>,
+}
+
+impl fmt::Debug for FileNode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FileNode")
+            .field("name", &self.name)
+            .field("path", &self.path)
+            .finish()
+    }
 }
 
 impl PartialEq for FileNode {
@@ -102,11 +112,9 @@ impl Node {
 
     pub fn iter(&self) -> Box<dyn Iterator<Item = &Node> + '_> {
         match self {
-            Node::File(..) => return Box::new(once(self)),
+            Node::File(..) => Box::new(once(self)),
             Node::Dir(node) => {
-                return Box::new(
-                    once(self).chain(node.children.values().flat_map(|child| child.iter())),
-                );
+                Box::new(once(self).chain(node.children.values().flat_map(|child| child.iter())))
             }
         }
     }
@@ -123,11 +131,11 @@ impl FileNode {
     fn new(path: Path, content: Box<[u8]>) -> Option<Self> {
         let name = String::from(path.split().pop()?);
         assert!(name.len() <= 20);
-        return Some(FileNode {
+        Some(FileNode {
             path,
             name,
             content,
-        });
+        })
     }
 
     pub fn data_chunks(&self) -> impl Iterator<Item = &[u8]> {
@@ -154,19 +162,19 @@ impl DirNode {
     fn new(path: Path) -> Option<Self> {
         let name = String::from(path.split().pop()?);
         assert!(name.len() <= 28);
-        return Some(DirNode {
+        Some(DirNode {
             path,
             name,
             children: HashMap::new(),
-        });
+        })
     }
 
     fn root() -> Self {
-        return DirNode {
+        DirNode {
             name: String::from("$root"),
             path: Path::new(String::from("")),
             children: HashMap::new(),
-        };
+        }
     }
 
     fn add_node(&mut self, node: Node, local_path: Path) -> Result<(), FileCreationError> {

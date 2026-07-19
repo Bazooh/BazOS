@@ -1,9 +1,8 @@
 use core::ptr::NonNull;
 
+use crate::memory::memory_mapper::MemoryMapper;
 use acpi::{AcpiHandler, PhysicalMapping};
 use x86_64::PhysAddr;
-
-use crate::memory::{MEMORY_MAPPER, to_virtual_address};
 
 #[derive(Clone, Copy, Debug)]
 pub struct AcpiHandlerImpl;
@@ -14,10 +13,7 @@ impl AcpiHandler for AcpiHandlerImpl {
         physical_address: usize,
         size: usize,
     ) -> PhysicalMapping<Self, T> {
-        let virtual_address = to_virtual_address(
-            PhysAddr::new(physical_address as u64),
-            MEMORY_MAPPER.phys_offset().as_u64(),
-        );
+        let virtual_address = MemoryMapper::to_virt(PhysAddr::new(physical_address as u64));
         unsafe {
             PhysicalMapping::new(
                 physical_address,

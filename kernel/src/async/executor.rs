@@ -1,14 +1,13 @@
 use core::task::Poll;
 
+use crate::cpu::instructions::hlt;
+use crate::println;
 use alloc::{collections::BTreeMap, sync::Arc};
 use crossbeam_queue::ArrayQueue;
-use x86_64::instructions::hlt;
-
-use crate::println;
 
 use super::{
     task::{Task, TaskId},
-    tasks::keyboard::handle_keyboard_interrupt,
+    tasks::keyboard::handle_key_presses,
 };
 
 pub struct Executor {
@@ -51,7 +50,7 @@ impl Executor {
 
     pub fn kernel() -> ! {
         let mut executor = Executor::new();
-        executor.spawn(handle_keyboard_interrupt());
+        executor.spawn(handle_key_presses());
         loop {
             executor.run();
             hlt();

@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 std = { path = "../../std" }
+main_macro = { path = "../../main_macro" }

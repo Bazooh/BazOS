@@ -1,47 +1,80 @@
-use crate::memory::frame_allocator::FRAME_ALLOCATOR;
+use crate::cpu::registers::Register;
+use crate::cpu::registers::cr3;
+use crate::memory::bootloader_allocator::FRAME_ALLOCATOR;
 use crate::memory::heap::init_heap;
 use crate::memory::program_allocator::init_program_allocator;
 use crate::memory::to_virtual_address;
 use conquer_once::spin::OnceCell;
 use core::arch::asm;
-use core::ops::{Deref, DerefMut};
-use x86_64::registers::control::Cr3;
+use core::ops::DerefMut;
 use x86_64::structures::paging::mapper::MapToError;
 use x86_64::structures::paging::page_table::PageTableEntry;
 use x86_64::structures::paging::{
     FrameAllocator, Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, PhysFrame, Size4KiB,
+    Translate,
 };
 use x86_64::{PhysAddr, VirtAddr};
 
-pub static MEMORY_MAPPER: MemoryMapper = MemoryMapper::new();
+static KERNEL_MAPPER: OnceCell<OffsetPageTable<'static>> = OnceCell::uninit();
 
 pub struct MemoryMapper {
-    mapper: OnceCell<OffsetPageTable<'static>>,
-    level_4_table_frame: OnceCell<PhysFrame>,
+    mapper: &'static OffsetPageTable<'static>,
+}
+
+pub trait MemoryTranslator {
+    fn to_phys(&self, virt: VirtAddr) -> Option<PhysAddr>;
+    fn to_frame(&self, page: Page) -> Option<PhysFrame>;
+}
+
+impl MemoryTranslator for OffsetPageTable<'_> {
+    fn to_phys(&self, virt: VirtAddr) -> Option<PhysAddr> {
+        Translate::translate_addr(self, virt)
+    }
+
+    fn to_frame(&self, page: Page) -> Option<PhysFrame> {
+        Mapper::translate_page(self, page).ok()
+    }
+}
+
+pub trait KernelMapper: MemoryTranslator {
+    fn addr(&self) -> PhysAddr;
+    fn copy_lvl4_entry(&self, i: usize) -> PageTableEntry;
+}
+
+impl KernelMapper for OffsetPageTable<'static> {
+    fn addr(&self) -> PhysAddr {
+        Translate::translate_addr(self, VirtAddr::from_ptr(self.level_4_table())).unwrap()
+    }
+
+    fn copy_lvl4_entry(&self, i: usize) -> PageTableEntry {
+        self.level_4_table()[i].clone()
+    }
 }
 
 impl MemoryMapper {
-    const fn new() -> Self {
-        MemoryMapper {
-            mapper: OnceCell::uninit(),
-            level_4_table_frame: OnceCell::uninit(),
-        }
+    pub fn kernel<'a>() -> &'a impl KernelMapper {
+        KERNEL_MAPPER.get().expect("Memory mapper not initialized")
     }
 
-    pub(crate) fn copy_lvl4_entry(&self, i: usize) -> PageTableEntry {
-        self.get_mapper().level_4_table()[i].clone()
+    pub fn current() -> impl MemoryTranslator {
+        unsafe { Self::page_table_from_addr(PhysAddr::new(cr3().read())) }
     }
 
-    fn get_mapper(&self) -> &OffsetPageTable<'static> {
-        self.mapper.get().expect("Mapper not initialized")
+    fn get_kernel_mapper() -> &'static OffsetPageTable<'static> {
+        KERNEL_MAPPER.get().expect("Memory mapper not initialized")
     }
 
-    pub fn to_virt(&self, phys_addr: PhysAddr) -> VirtAddr {
-        self.phys_offset() + phys_addr.as_u64()
+    pub fn phys_offset() -> VirtAddr {
+        Self::get_kernel_mapper().phys_offset()
     }
 
-    pub fn to_page(&self, frame: PhysFrame) -> Page {
-        Page::from_start_address(self.to_virt(frame.start_address())).unwrap()
+    pub fn to_virt(phys_addr: PhysAddr) -> VirtAddr {
+        Self::phys_offset() + phys_addr.as_u64()
+    }
+
+    pub fn to_page(frame: PhysFrame) -> Page {
+        let virt_addr = Self::to_virt(frame.start_address());
+        Page::from_start_address(virt_addr).unwrap()
     }
 
     /// Initialize a new OffsetPageTable.
@@ -50,7 +83,7 @@ impl MemoryMapper {
     /// complete physical memory is mapped to virtual memory at the passed
     /// `physical_memory_offset`. Also, this function must be only called once
     /// to avoid aliasing `&mut` references (which is undefined behavior).
-    pub(crate) unsafe fn init(&self, physical_memory_offset: u64) {
+    pub unsafe fn init(physical_memory_offset: u64) {
         let mut page_table = unsafe {
             let level_4_table = Self::active_level_4_table(physical_memory_offset);
             OffsetPageTable::new(level_4_table, VirtAddr::new(physical_memory_offset))
@@ -60,16 +93,17 @@ impl MemoryMapper {
             mapper: &mut page_table,
         };
 
-        self.level_4_table_frame
-            .try_init_once(|| Cr3::read().0)
-            .expect("Physical Level 4 Address already initialized");
+        init_heap(&mut page_mapper);
+        init_program_allocator(&mut page_mapper);
 
-        init_heap(&mut page_mapper).expect("Heap initialization failed");
-        init_program_allocator(&mut page_mapper).expect("Program allocator initialization failed");
-
-        self.mapper
+        KERNEL_MAPPER
             .try_init_once(|| page_table)
-            .expect("Memory mapper already initialized");
+            .expect("Physical Level 4 Address already initialized");
+    }
+
+    pub unsafe fn page_table_from_addr(page_table_addr: PhysAddr) -> OffsetPageTable<'static> {
+        let ptr = Self::to_virt(page_table_addr).as_mut_ptr();
+        unsafe { OffsetPageTable::new(&mut *ptr, Self::phys_offset()) }
     }
 
     /// Returns a mutable reference to the active level 4 table.
@@ -79,24 +113,11 @@ impl MemoryMapper {
     /// `physical_memory_offset`. Also, this function must be only called once
     /// to avoid aliasing `&mut` references (which is undefined behavior).
     unsafe fn active_level_4_table(physical_memory_offset: u64) -> &'static mut PageTable {
-        let (level_4_table_frame, _) = Cr3::read();
-        let address =
-            to_virtual_address(level_4_table_frame.start_address(), physical_memory_offset);
+        let address = to_virtual_address(PhysAddr::new(cr3().read()), physical_memory_offset);
         unsafe { &mut *(address.as_mut_ptr()) }
     }
 
-    pub unsafe fn switch_to_kernel(&self) {
-        unsafe {
-            self.switch_to(
-                self.level_4_table_frame
-                    .get()
-                    .expect("Memory mapper not initialized")
-                    .start_address(),
-            );
-        }
-    }
-
-    pub unsafe fn switch_to(&self, page_table_addr: PhysAddr) -> PhysAddr {
+    pub unsafe fn switch_to(page_table_addr: PhysAddr) -> PhysAddr {
         let mut old_page_table_addr: u64;
         unsafe {
             asm!(
@@ -110,20 +131,12 @@ impl MemoryMapper {
     }
 }
 
-impl Deref for MemoryMapper {
-    type Target = OffsetPageTable<'static>;
-
-    fn deref(&self) -> &Self::Target {
-        self.get_mapper()
-    }
-}
-
 pub struct PageMapper<'a> {
     mapper: &'a mut OffsetPageTable<'static>,
 }
 
 impl<'a> PageMapper<'a> {
-    pub(crate) fn map(
+    pub fn map(
         &mut self,
         start: VirtAddr,
         size: u64,
@@ -147,12 +160,7 @@ impl<'a> PageMapper<'a> {
                 .ok_or(MapToError::FrameAllocationFailed)?;
             unsafe {
                 self.mapper
-                    .map_to(
-                        page,
-                        frame,
-                        PageTableFlags::PRESENT | flags,
-                        frame_allocator.deref_mut(),
-                    )?
+                    .map_to(page, frame, flags, frame_allocator.deref_mut())?
                     .flush()
             };
         }

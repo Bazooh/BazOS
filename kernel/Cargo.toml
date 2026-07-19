@@ -19,6 +19,7 @@ volatile = "0.2.6"
 x86_64 = "0.15.4"
 virtio-drivers = "0.13.0"
 acpi = { version = "5.2.0", default-features = false }
+paste = "1.0.15"
 
 [[bin]]
 name = "BazOS"

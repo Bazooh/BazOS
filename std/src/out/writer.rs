@@ -1,16 +1,12 @@
-use crate::syscall::{SyscallNumber, syscall};
+use crate::syscall::SyscallNumber::Out;
+use crate::syscall::syscall;
 use core::fmt::{Result, Write};
 
 pub struct Writer;
 
 impl Write for Writer {
     fn write_str(&mut self, string: &str) -> Result {
-        match syscall(
-            SyscallNumber::Out,
-            string.as_ptr() as usize,
-            string.len(),
-            0,
-        ) {
+        match syscall(Out, string.as_ptr() as u64, string.len() as u64, 0, 0) {
             0 => Ok(()),
             _ => Err(core::fmt::Error),
         }

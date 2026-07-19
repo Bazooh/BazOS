@@ -1,36 +1,46 @@
-use crate::r#async::thread::Thread;
+use crate::r#async::thread::ThreadId;
+use crate::r#async::threads_array::ThreadRef;
 use crate::interrupts;
-use core::arch::asm;
+use alloc::boxed::Box;
+use core::cell::{Ref, RefCell, RefMut};
+use core::mem;
 
 pub struct Worker {
-    first_thread: Thread,
+    current_thread: Option<Box<ThreadRef>>,
 }
 
+struct CurrentWorker {
+    worker: RefCell<Worker>,
+}
+
+unsafe impl Send for CurrentWorker {}
+unsafe impl Sync for CurrentWorker {}
+
+static CURRENT: CurrentWorker = CurrentWorker {
+    worker: RefCell::new(Worker {
+        current_thread: None,
+    }),
+};
+
 impl Worker {
-    pub fn new() -> Self {
-        Worker {
-            first_thread: Thread::kernel(),
-        }
+    pub fn current<'a>() -> Ref<'a, Worker> {
+        CURRENT.worker.borrow()
     }
 
-    pub fn set_current_thread(thread: &Thread) {
-        unsafe {
-            asm!("mov gs:0, {}", in(reg) thread);
-        }
+    pub fn current_mut<'a>() -> RefMut<'a, Worker> {
+        CURRENT.worker.borrow_mut()
     }
 
-    /// Safety: you must be the only one to use it
-    pub unsafe fn current_thread() -> &'static mut Thread {
-        let mut thread: *mut Thread;
-        unsafe {
-            asm!("mov {}, gs:0", out(reg) thread);
-            &mut *thread
-        }
+    pub fn swap_thread(&mut self, new_thread: Option<Box<ThreadRef>>) -> Option<Box<ThreadRef>> {
+        mem::replace(&mut self.current_thread, new_thread)
     }
 
-    pub fn run(self) -> ! {
-        Self::set_current_thread(&self.first_thread);
+    pub fn current_thread_id(&self) -> Option<ThreadId> {
+        Some(self.current_thread.as_ref()?.id())
+    }
+
+    pub fn run() -> ! {
         interrupts::enable();
-        loop {} // Context switch will run the thread
+        loop {} // Context switch will run threads
     }
 }

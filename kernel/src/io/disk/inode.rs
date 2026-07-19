@@ -132,7 +132,7 @@ impl VirtDiskDirNode {
 
     pub fn get(&self, name: &str) -> Option<(INodeIndex, VirtDiskINode)> {
         for inode_index in self.files_inode_index() {
-            // TODO: Different exception
+            // TODO: Different exceptions
             let inode = DISK_DRIVER
                 .try_get()
                 .unwrap()

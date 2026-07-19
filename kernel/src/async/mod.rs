@@ -11,6 +11,7 @@ mod waker;
 
 use crate::r#async::scheduling::scheduler::init_scheduler;
 pub use tasks::keyboard::SCANCODE_STREAMER;
+pub use threads_array::ThreadRef;
 
 pub fn init_async() {
     init_scheduler();

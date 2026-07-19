@@ -1,5 +1,12 @@
 use core::cell::OnceCell;
 
+use crate::memory::memory_mapper::MemoryMapper;
+use crate::{
+    fs::device::BlockDevice,
+    io::{
+        acpi::AcpiHandlerImpl, configuration_access::ConfigurationAccessImpl, disk, hal::HalImpl,
+    },
+};
 use acpi::{AcpiTables, mcfg::Mcfg, rsdp::Rsdp};
 use spin::Mutex;
 use virtio_drivers::{
@@ -10,14 +17,6 @@ use virtio_drivers::{
     },
 };
 use x86_64::PhysAddr;
-
-use crate::{
-    fs::device::BlockDevice,
-    io::{
-        acpi::AcpiHandlerImpl, configuration_access::ConfigurationAccessImpl, disk, hal::HalImpl,
-    },
-    memory::{MEMORY_MAPPER, to_virtual_address},
-};
 
 pub static BLOCK_DEVICE: Mutex<OnceCell<Device>> = Mutex::new(OnceCell::new());
 
@@ -62,10 +61,7 @@ pub fn init() {
     };
 
     let config = acpi.find_table::<Mcfg>().unwrap().entries()[0];
-    let address = to_virtual_address(
-        PhysAddr::new(config.base_address),
-        MEMORY_MAPPER.phys_offset().as_u64(),
-    );
+    let address = MemoryMapper::to_virt(PhysAddr::new(config.base_address));
 
     let mut pci = unsafe {
         PciRoot::new(ConfigurationAccessImpl::new(

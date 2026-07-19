@@ -112,7 +112,7 @@ impl SystemSegmentDescriptor {
         }
     }
 
-    fn as_u128(self) -> u128 {
+    fn to_u128(self) -> u128 {
         let mut value = 0;
         value.set_bits(64..=95, (self.base >> 32) as u32 as u128);
         value.set_bits(56..=63, (self.base >> 24) as u8 as u128);
@@ -137,7 +137,7 @@ impl GlobalDescriptorTable {
     fn new() -> GlobalDescriptorTable {
         let mut gdt = GlobalDescriptorTable {
             table: [0; 16],
-            size: 3,
+            size: 5,
             tss_position: None,
         };
         gdt.table[0] = SegmentDescriptor::null().as_u64();
@@ -151,13 +151,19 @@ impl GlobalDescriptorTable {
             Flags::LongMode,
         )
         .as_u64();
+        gdt.table[3] =
+            SegmentDescriptor::new(Access::data(Privilege::User, false, true), Flags::LongMode)
+                .as_u64();
+        gdt.table[4] =
+            SegmentDescriptor::new(Access::code(Privilege::User, true, true), Flags::LongMode)
+                .as_u64();
         gdt
     }
 
     fn add_tss(&mut self, tss: &'static TaskStateSegment) {
         assert!(self.size < 15, "GDT is full");
 
-        let descriptor = tss.as_descriptor().as_u128();
+        let descriptor = tss.as_descriptor().to_u128();
         self.table[self.size as usize] = descriptor as u64;
         self.table[self.size as usize + 1] = (descriptor >> 64) as u64;
         self.tss_position = Some(self.size);
@@ -206,9 +212,9 @@ impl GlobalDescriptorTable {
 
 lazy_static! {
     #[repr(C, align(16))]
-    static ref TSS: TaskStateSegment = {
+    pub static ref TSS: TaskStateSegment = {
         let mut tss = TaskStateSegment::new();
-        tss.set_stack(0, &raw const DOUBLE_FAULT_STACK);
+        tss.set_stack(0, &raw mut DOUBLE_FAULT_STACK);
         tss
     };
 

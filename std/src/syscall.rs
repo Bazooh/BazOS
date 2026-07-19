@@ -5,9 +5,11 @@ use core::arch::asm;
 pub enum SyscallNumber {
     Out = 1,
     Fork = 2,
+    Exec = 3,
+    Exit = 4,
 }
 
-pub fn syscall(syscall_number: SyscallNumber, arg0: usize, arg1: usize, arg2: usize) -> isize {
+pub fn syscall(syscall_number: SyscallNumber, arg0: u64, arg1: u64, arg2: u64, arg3: u64) -> i64 {
     let mut result;
     unsafe {
         asm!(
@@ -15,7 +17,8 @@ pub fn syscall(syscall_number: SyscallNumber, arg0: usize, arg1: usize, arg2: us
             in("rdi") arg0,
             in("rsi") arg1,
             in("rdx") arg2,
-            in("rcx") syscall_number as u64,
+            in("rcx") arg3,
+            in("r8")  syscall_number as u64,
             out("rax") result,
         );
     }
