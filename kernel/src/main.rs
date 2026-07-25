@@ -7,8 +7,6 @@
 extern crate alloc;
 
 use alloc::string::String;
-#[cfg(test)]
-use std::qemu::exit;
 
 use BazOS::r#async::executor::Executor;
 use BazOS::r#async::process::Process;
@@ -21,6 +19,7 @@ use BazOS::{
     program::executor::ProgramExecutor,
 };
 use bootloader::{BootInfo, entry_point};
+use common::qemu;
 use x86_64::VirtAddr;
 
 entry_point!(main);
@@ -28,7 +27,7 @@ entry_point!(main);
 #[allow(unreachable_code)]
 pub fn main(boot_info: &'static BootInfo) -> ! {
     #[cfg(test)]
-    exit(std::qemu::ExitCode::Success);
+    qemu::exit(qemu::ExitCode::Success);
 
     init(boot_info);
 

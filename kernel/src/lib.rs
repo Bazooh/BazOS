@@ -7,11 +7,8 @@
 
 extern crate alloc;
 
-use alloc::{format, string::String, vec::Vec};
-use core::str::from_utf8;
 #[cfg(test)]
-use std::hlt_loop;
-use std::serial_println;
+use common::hlt_loop;
 
 use bootloader::BootInfo;
 #[cfg(test)]
@@ -49,35 +46,4 @@ pub fn init(boot_info: &'static BootInfo) {
     init_memory(boot_info.physical_memory_offset, &boot_info.memory_map);
     init_async();
     io::device::init();
-}
-
-pub fn print_data(data: &[u8]) {
-    let address = data.as_ptr() as u64;
-    for (i, line) in data.chunks(16).enumerate() {
-        serial_println!(
-            "0x{}:  {:<47}  |{:<16}|",
-            format!("{:#018x}", address + i as u64 * 16)[2..]
-                .as_bytes()
-                .rchunks(4)
-                .rev()
-                .map(|c| from_utf8(c).unwrap())
-                .collect::<Vec<_>>()
-                .join("_"),
-            line.chunks(8)
-                .map(|g| {
-                    g.iter()
-                        .map(|x| format!("{x:02x}"))
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                })
-                .collect::<Vec<_>>()
-                .join("  "),
-            line.iter()
-                .map(|x| match *x {
-                    0x20..=0x7e => char::from(*x),
-                    _ => '.',
-                })
-                .collect::<String>()
-        );
-    }
 }

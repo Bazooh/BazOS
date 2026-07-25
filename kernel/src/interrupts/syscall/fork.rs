@@ -4,10 +4,7 @@ use crate::interrupts::idt::ExceptionStackFrame;
 use x86_64::VirtAddr;
 
 pub fn fork_handler(frame: &ExceptionStackFrame) -> i64 {
-    let thread_id = Worker::current().current_thread_id();
-    let Some(thread_id) = thread_id else {
-        panic!("Fork called without current thread");
-    };
+    let thread_id = Worker::current().current_thread_id().unwrap();
 
     let current_process = Scheduler::lock()
         .get_process(thread_id.pid)

@@ -2,8 +2,8 @@
 #![no_main]
 
 use main_macro::main;
-use std::exec::exec;
 use std::println;
+use std::syscalls::exec::exec;
 
 #[main]
 fn main() {

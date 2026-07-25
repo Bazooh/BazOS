@@ -9,6 +9,7 @@ dependencies = [
  "acpi",
  "bit_field",
  "bootloader",
+ "common",
  "conquer-once",
  "crossbeam-queue",
  "futures-util",
@@ -17,7 +18,6 @@ dependencies = [
  "pc-keyboard",
  "pic8259",
  "spin 0.5.2",
- "std",
  "uart_16550",
  "virtio-drivers",
  "volatile 0.2.7",
@@ -58,6 +58,16 @@ name = "bootloader"
 version = "0.9.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13f6a8a495d2f93fe3d6eb3a224f9aa749a63cfd746ed03eb5ddcbd00ade7d8f"
+
+[[package]]
+name = "common"
+version = "0.1.0"
+dependencies = [
+ "lazy_static",
+ "spin 0.5.2",
+ "uart_16550",
+ "x86_64",
+]
 
 [[package]]
 name = "conquer-once"
@@ -267,12 +277,7 @@ checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
 name = "std"
 version = "0.1.0"
 dependencies = [
- "bootloader",
- "lazy_static",
- "spin 0.5.2",
- "uart_16550",
- "volatile 0.2.7",
- "x86_64",
+ "common",
 ]
 
 [[package]]

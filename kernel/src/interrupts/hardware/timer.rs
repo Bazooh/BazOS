@@ -5,7 +5,7 @@ use crate::r#async::scheduling::worker::Worker;
 use crate::gdt::TSS;
 use crate::interrupts::idt::ExceptionStackFrame;
 use alloc::boxed::Box;
-use std::serial_println;
+use common::serial_println;
 use x86_64::{PhysAddr, VirtAddr};
 
 pub extern "C" fn timer_handler(_stack_frame: &ExceptionStackFrame) -> Option<Box<ThreadRef>> {

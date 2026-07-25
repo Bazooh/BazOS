@@ -1,5 +1,4 @@
-use crate::syscall::SyscallNumber::Out;
-use crate::syscall::syscall;
+use common::syscall::{SyscallNumber::Out, syscall};
 use core::fmt::{Result, Write};
 
 pub struct Writer;

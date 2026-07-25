@@ -1,15 +1,18 @@
 use crate::interrupts::syscall::exec::exec_handler;
+use crate::interrupts::syscall::mmap::{mmap_handler, munmap_handler};
 use crate::interrupts::{
     idt::ExceptionStackFrame,
     syscall::{fork::fork_handler, out::out_handler},
 };
 use crate::{eprintln, interrupts};
+use common::hlt_loop;
 use core::slice;
 use core::str::from_utf8;
-use std::hlt_loop;
+use x86_64::VirtAddr;
 
 mod exec;
 mod fork;
+pub mod mmap;
 mod out;
 
 #[repr(u64)]
@@ -20,6 +23,8 @@ pub enum SyscallNumber {
     Fork = 2,
     Exec = 3,
     Exit = 4,
+    MMap = 5,
+    MUnmap = 6,
 }
 
 pub unsafe extern "C" fn syscall_handler(
@@ -41,6 +46,8 @@ pub unsafe extern "C" fn syscall_handler(
             interrupts::enable();
             hlt_loop();
         }
+        SyscallNumber::MMap => mmap_handler(arg0),
+        SyscallNumber::MUnmap => munmap_handler(VirtAddr::new(arg0), arg1),
     }
 }
 

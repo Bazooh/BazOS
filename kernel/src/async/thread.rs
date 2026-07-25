@@ -2,8 +2,8 @@ use crate::interrupts::ExceptionStackFrame;
 use crate::memory::PAGE_SIZE;
 use crate::memory::memory_mapper::{KernelMapper, MemoryMapper, MemoryTranslator};
 use alloc::boxed::Box;
+use common::{hlt_loop, serial_println};
 use core::arch::asm;
-use std::{hlt_loop, serial_println};
 use x86_64::{PhysAddr, VirtAddr};
 
 pub const STACK_SIZE: u64 = 3 * PAGE_SIZE;

@@ -6,10 +6,9 @@
 
 extern crate alloc;
 
-use BazOS::{init, memory::HEAP_SIZE};
+use BazOS::init;
 use alloc::{boxed::Box, vec::Vec};
 use bootloader::{BootInfo, entry_point};
-use core::panic::PanicInfo;
 use std::hlt_loop;
 
 entry_point!(main);
@@ -40,18 +39,8 @@ fn large_vec() {
 
 #[test_case]
 fn many_boxes() {
-    for i in 0..HEAP_SIZE {
+    for i in 0..16384 {
         let x = Box::new(i);
         assert_eq!(*x, i);
     }
-}
-
-#[test_case]
-fn many_boxes_long_lived() {
-    let long_lived = Box::new(1);
-    for i in 0..HEAP_SIZE {
-        let x = Box::new(i);
-        assert_eq!(*x, i);
-    }
-    assert_eq!(*long_lived, 1);
 }

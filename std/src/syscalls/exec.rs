@@ -1,5 +1,5 @@
-use crate::fork::Pid;
-use crate::syscall::{SyscallNumber, syscall};
+use crate::syscalls::fork::Pid;
+use common::syscall::{SyscallNumber, syscall};
 
 pub fn exec(file_path: &str, args: &[&str]) -> Result<Pid, ()> {
     let arg0 = file_path.as_ptr() as u64;

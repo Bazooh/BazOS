@@ -82,7 +82,7 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     let expanded = quote! {
-        use std::exit::exit;
+        use std::syscalls::exit::exit;
 
         #[unsafe(no_mangle)]
         extern "C" fn _start(#(#abi_inputs),*) -> ! {

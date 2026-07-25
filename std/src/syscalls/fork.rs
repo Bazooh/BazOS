@@ -1,5 +1,4 @@
-use crate::syscall::SyscallNumber::Fork;
-use crate::syscall::syscall;
+use common::syscall::{SyscallNumber::Fork, syscall};
 
 #[derive(Debug)]
 pub struct Pid(pub u64);

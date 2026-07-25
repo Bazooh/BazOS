@@ -7,7 +7,7 @@ use crate::r#async::thread::{STACK_SIZE, USER_STACK_START};
 use crate::r#async::thread::{Thread, ThreadId};
 use crate::memory::allocator::Allocator;
 use crate::memory::memory_mapper::{KernelMapper, MemoryMapper, MemoryTranslator};
-use crate::memory::{PAGE_SIZE, PROGRAM_ALLOCATOR};
+use crate::memory::{PAGE_SIZE, PROGRAM_ALLOCATOR, PROGRAM_HEAP_START};
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::ops::DerefMut;
@@ -315,6 +315,33 @@ impl Process {
         }
 
         Ok(())
+    }
+
+    pub fn find_free_mem_region(&self, n_pages: u64) -> PageRange {
+        let mut intervals = self.memory_regions.to_vec();
+        intervals.sort_by_key(|i| i.start);
+
+        let mut candidate =
+            Page::<Size4KiB>::from_start_address(VirtAddr::new(PROGRAM_HEAP_START)).unwrap();
+
+        for interval in intervals {
+            if candidate + n_pages <= interval.start {
+                return PageRange {
+                    start: candidate,
+                    end: candidate + n_pages,
+                };
+            }
+
+            if candidate < interval.end {
+                // Move after the overlapping interval
+                candidate = interval.end;
+            }
+        }
+
+        PageRange {
+            start: candidate,
+            end: candidate + n_pages,
+        }
     }
 
     pub fn pid(&self) -> u64 {

@@ -6,11 +6,13 @@ macro_rules! println {
 
 #[macro_export]
 macro_rules! print {
-    ($($arg:tt)*) => ($crate::out::print::_print(format_args!($($arg)*)));
+    ($($arg:tt)*) => ($crate::syscalls::out::print::_print(format_args!($($arg)*)));
 }
 
 #[doc(hidden)]
 pub fn _print(args: core::fmt::Arguments) {
     use core::fmt::Write;
-    crate::out::writer::Writer.write_fmt(args).unwrap();
+    crate::syscalls::out::writer::Writer
+        .write_fmt(args)
+        .unwrap();
 }

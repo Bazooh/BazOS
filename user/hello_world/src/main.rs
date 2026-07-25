@@ -2,8 +2,8 @@
 #![no_main]
 
 use main_macro::main;
-use std::fork::fork;
 use std::println;
+use std::syscalls::fork::fork;
 
 #[main]
 fn main() {
