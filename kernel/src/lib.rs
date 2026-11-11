@@ -26,6 +26,7 @@ pub mod io;
 pub mod memory;
 pub mod out;
 pub mod program;
+mod tty;
 mod utils;
 
 #[cfg(test)]

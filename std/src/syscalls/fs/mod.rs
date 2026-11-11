@@ -1,2 +1,2 @@
-mod file_descriptor_resource;
+pub mod file_descriptor;
 pub mod open;

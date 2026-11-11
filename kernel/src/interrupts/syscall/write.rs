@@ -1,8 +1,8 @@
 use crate::r#async::scheduling::scheduler::Scheduler;
 use crate::r#async::scheduling::worker::Worker;
-use common::fs::FileDescriptor;
+use common::fs::FileDescriptorIndex;
 
-pub fn write_handler(file_descriptor: FileDescriptor, buffer: Result<&[u8], ()>) -> i64 {
+pub fn write_handler(file_descriptor: FileDescriptorIndex, buffer: Result<&[u8], ()>) -> i64 {
     let buffer = match buffer {
         Ok(buffer) => buffer,
         Err(_) => return -4,
@@ -13,9 +13,9 @@ pub fn write_handler(file_descriptor: FileDescriptor, buffer: Result<&[u8], ()>)
         .get_process(thread_id.pid)
         .expect("Could not get process from pid");
 
-    match current_process.lock().get_resource_mut(&file_descriptor) {
+    match current_process.lock().lock_resource(&file_descriptor) {
         None => -1,
-        Some(resource) => {
+        Some(mut resource) => {
             if buffer.len() > i64::MAX as usize {
                 return -3;
             }

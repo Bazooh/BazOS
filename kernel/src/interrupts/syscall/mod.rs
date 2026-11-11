@@ -1,17 +1,18 @@
 use crate::interrupts::syscall::close::close_handler;
+use crate::interrupts::syscall::duplicate_fd::duplicate_fd_handler;
 use crate::interrupts::syscall::exec::exec_handler;
 use crate::interrupts::syscall::mmap::{mmap_handler, munmap_handler};
 use crate::interrupts::syscall::open::open_handler;
 use crate::interrupts::syscall::read::read_handler;
+use crate::interrupts::syscall::replace_fd::replace_fd_handler;
 use crate::interrupts::syscall::write::write_handler;
 use crate::interrupts::{
     idt::ExceptionStackFrame,
     syscall::{fork::fork_handler, out::out_handler},
 };
-use crate::{eprintln, hlt_loop, interrupts};
-use common::fs::FileDescriptor;
+use crate::{hlt_loop, interrupts};
+use common::fs::FileDescriptorIndex;
 pub(crate) use common::syscall::SyscallNumber;
-use core::arch::asm;
 use core::slice;
 use core::str::from_utf8;
 use x86_64::VirtAddr;
@@ -23,7 +24,9 @@ mod open;
 mod out;
 
 mod close;
+mod duplicate_fd;
 mod read;
+mod replace_fd;
 mod write;
 
 pub unsafe extern "C" fn syscall_handler(
@@ -48,30 +51,23 @@ pub unsafe extern "C" fn syscall_handler(
         SyscallNumber::MMap => mmap_handler(arg0),
         SyscallNumber::MUnmap => munmap_handler(VirtAddr::new(arg0), arg1),
         SyscallNumber::Open => open_handler(unsafe { to_str(arg0, arg1) }),
-        SyscallNumber::Read => read_handler(FileDescriptor::new(arg0), unsafe {
+        SyscallNumber::Read => read_handler(FileDescriptorIndex::new(arg0), unsafe {
             to_mut_slice(arg1, arg2)
         }),
-        SyscallNumber::Write => {
-            write_handler(FileDescriptor::new(arg0), unsafe { to_slice(arg1, arg2) })
-        }
-        SyscallNumber::Close => close_handler(FileDescriptor::new(arg0)),
-        SyscallNumber::DEBUGDisableInterrupts => {
-            unsafe { asm!("cli") };
-            0
-        }
+        SyscallNumber::Write => write_handler(FileDescriptorIndex::new(arg0), unsafe {
+            to_slice(arg1, arg2)
+        }),
+        SyscallNumber::Close => close_handler(FileDescriptorIndex::new(arg0)),
+        SyscallNumber::DuplicateFd => duplicate_fd_handler(FileDescriptorIndex::new(arg0)),
+        SyscallNumber::ReplaceFd => replace_fd_handler(
+            FileDescriptorIndex::new(arg0),
+            FileDescriptorIndex::new(arg1),
+        ),
     }
 }
 
 unsafe fn to_str(ptr: u64, len: u64) -> Result<&'static str, ()> {
-    let result = from_utf8(unsafe { to_slice(ptr, len)? });
-    match result {
-        Ok(string) => Ok(string),
-        Err(err) => {
-            // TODO: terminate the process ?
-            eprintln!("{}", err);
-            Err(())
-        }
-    }
+    from_utf8(unsafe { to_slice(ptr, len)? }).map_err(|_| ())
 }
 
 unsafe fn to_slice<T>(ptr: u64, len: u64) -> Result<&'static [T], ()> {

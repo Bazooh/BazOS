@@ -12,7 +12,7 @@ use crate::{
 };
 use alloc::vec::Vec;
 use common::io_error::IOError;
-use common::opened_resource::OpenedResource;
+use common::opened_resource::Resource;
 use common::path::Path;
 use conquer_once::noblock::OnceCell;
 
@@ -112,7 +112,7 @@ impl VirtDiskDriver {
 }
 
 impl DiskDriver for VirtDiskDriver {
-    fn create(&self, path: Path) -> Result<impl OpenedResource, IOError> {
+    fn create(&self, path: Path) -> Result<impl Resource, IOError> {
         let block_id = self
             .flip_free_inode_index()
             .ok_or(IOError::NotEnoughSpace)?;
@@ -123,7 +123,7 @@ impl DiskDriver for VirtDiskDriver {
         Ok(VirtDiskFile::new(todo!()).unwrap())
     }
 
-    fn open(&self, path: Path) -> Result<impl OpenedResource, IOError> {
+    fn open(&self, path: Path) -> Result<impl Resource, IOError> {
         let mut parts: Vec<&str> = path.split();
         let file_name = parts.pop().ok_or(IOError::InvalidPath)?;
 

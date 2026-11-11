@@ -1,6 +1,7 @@
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::btree_map::Entry;
+use alloc::sync::Arc;
 use core::fmt::{Debug, Formatter};
 
 use crate::r#async::scheduling::scheduler::Scheduler;
@@ -11,10 +12,11 @@ use crate::memory::memory_mapper::{KernelMapper, MemoryMapper, MemoryTranslator}
 use crate::memory::{PAGE_SIZE, PROGRAM_ALLOCATOR, PROGRAM_HEAP_START};
 use alloc::string::String;
 use alloc::vec::Vec;
-use common::fs::FileDescriptor;
-use common::opened_resource::OpenedResource;
+use common::fs::FileDescriptorIndex;
+use common::opened_resource::Resource;
 use core::ops::DerefMut;
 use core::ptr::copy_nonoverlapping;
+use spin::{Mutex, MutexGuard};
 use x86_64::VirtAddr;
 use x86_64::structures::paging::mapper::MapToError;
 use x86_64::structures::paging::page::PageRange;
@@ -30,7 +32,7 @@ pub struct Process {
     name: String,
     page_table: OffsetPageTable<'static>,
     last_thread_id: u64,
-    resources: BTreeMap<FileDescriptor, Box<dyn OpenedResource>>,
+    resources: BTreeMap<FileDescriptorIndex, Arc<Mutex<dyn Resource>>>,
 
     memory_regions: Vec<PageRange>,
     threads_stack: BTreeMap<ThreadId, PageRange>,
@@ -354,9 +356,12 @@ impl Process {
         }
     }
 
-    pub fn add_resource(&mut self, resource: Box<dyn OpenedResource>) -> Option<FileDescriptor> {
+    pub fn add_resource(
+        &mut self,
+        resource: Arc<Mutex<dyn Resource>>,
+    ) -> Option<FileDescriptorIndex> {
         for i in 0..MAX_RESOURCES {
-            match self.resources.entry(FileDescriptor::new(i)) {
+            match self.resources.entry(FileDescriptorIndex::new(i)) {
                 Entry::Vacant(entry) => {
                     let file_descriptor = *entry.key();
                     entry.insert(resource);
@@ -368,25 +373,37 @@ impl Process {
         None
     }
 
-    pub fn get_resource(
+    pub fn clone_resource(
         &self,
-        file_descriptor: &FileDescriptor,
-    ) -> Option<&Box<dyn OpenedResource>> {
-        self.resources.get(file_descriptor)
+        file_descriptor: &FileDescriptorIndex,
+    ) -> Option<Arc<Mutex<dyn Resource>>> {
+        Some(Arc::clone(self.resources.get(file_descriptor)?))
     }
 
-    pub fn get_resource_mut(
+    pub fn lock_resource(
         &mut self,
-        file_descriptor: &FileDescriptor,
-    ) -> Option<&mut Box<dyn OpenedResource>> {
-        self.resources.get_mut(file_descriptor)
+        file_descriptor: &FileDescriptorIndex,
+    ) -> Option<MutexGuard<'_, dyn Resource + 'static>> {
+        Some(self.resources.get(file_descriptor)?.lock())
     }
 
     pub fn remove_resource(
         &mut self,
-        file_descriptor: &FileDescriptor,
-    ) -> Option<Box<dyn OpenedResource>> {
+        file_descriptor: &FileDescriptorIndex,
+    ) -> Option<Arc<Mutex<dyn Resource>>> {
         self.resources.remove(file_descriptor)
+    }
+
+    pub fn replace_resource(
+        &mut self,
+        file_descriptor: FileDescriptorIndex,
+        new: Arc<Mutex<dyn Resource>>,
+    ) -> Option<()> {
+        if file_descriptor.as_u64() >= MAX_RESOURCES {
+            return None;
+        }
+        self.resources.insert(file_descriptor, new);
+        Some(())
     }
 
     pub fn pid(&self) -> u64 {

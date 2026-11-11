@@ -1,10 +1,10 @@
 use conquer_once::spin::OnceCell;
 use futures_util::StreamExt;
-use pc_keyboard::{DecodedKey, Keyboard, KeyboardLayout, ScancodeSet, ScancodeSet1, layouts};
-
-use crate::{erase, print};
+use pc_keyboard::{Keyboard, KeyboardLayout, ScancodeSet, ScancodeSet1, layouts};
 
 use super::stream::Streamer;
+use crate::io::key_events;
+use crate::tty::TTY;
 
 pub static SCANCODE_STREAMER: OnceCell<Streamer<u8>> = OnceCell::uninit();
 
@@ -14,20 +14,13 @@ trait KeyProcessor {
 
 impl<L: KeyboardLayout, S: ScancodeSet> KeyProcessor for Keyboard<L, S> {
     fn process(&mut self, scancode: u8) {
-        let key = {
-            if let Ok(Some(key_event)) = self.add_byte(scancode) {
-                self.process_keyevent(key_event)
-            } else {
-                None
-            }
+        let Ok(Some(key_event)) = self.add_byte(scancode) else {
+            return;
         };
 
-        if let Some(key) = key {
-            match key {
-                DecodedKey::Unicode('\u{8}') => erase!(),
-                DecodedKey::Unicode(character) => print!("{}", character),
-                DecodedKey::RawKey(_key) => (),
-            }
+        key_events::publish(key_event.clone());
+        if let Some(key) = self.process_keyevent(key_event) {
+            TTY.handle(key);
         }
     }
 }

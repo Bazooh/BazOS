@@ -13,7 +13,8 @@ pub enum SyscallNumber {
     Read = 8,
     Write = 9,
     Close = 10,
-    DEBUGDisableInterrupts = 11,
+    DuplicateFd = 11,
+    ReplaceFd = 12,
 }
 
 pub fn syscall(syscall_number: SyscallNumber, arg0: u64, arg1: u64, arg2: u64, arg3: u64) -> i64 {

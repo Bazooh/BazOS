@@ -3,7 +3,7 @@ use crate::{
     fs::device::BlockDevice,
     io::{device::BLOCK_DEVICE, disk::BLOCK_SIZE},
 };
-use common::opened_resource::OpenedResource;
+use common::opened_resource::Resource;
 use common::syscall_errors::read::ReadError;
 
 pub struct VirtDiskFile {
@@ -20,7 +20,7 @@ impl VirtDiskFile {
     }
 }
 
-impl OpenedResource for VirtDiskFile {
+impl Resource for VirtDiskFile {
     fn read_into(&mut self, buffer: &mut [u8; BLOCK_SIZE]) -> Result<usize, ReadError> {
         let Some(block) = self.inode.data_block(self.current_block_index) else {
             return Ok(0);

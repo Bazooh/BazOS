@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 
 pub const BLOCK_SIZE: usize = 512;
 
-pub trait OpenedResource: Send {
+pub trait Resource: Send {
     fn read_all(&mut self) -> Result<Option<Box<[u8]>>, ReadError> {
         let mut content = Vec::new();
         let mut buf = [0u8; BLOCK_SIZE];

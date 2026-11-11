@@ -8,7 +8,7 @@ use crate::{
     utils::interval::{Interval, merge_intervals},
 };
 use alloc::{string::String, vec::Vec};
-use common::opened_resource::OpenedResource;
+use common::opened_resource::Resource;
 use common::syscall_errors::exec::ExecError;
 use x86_64::structures::paging::page::PageRange;
 use x86_64::{
@@ -20,7 +20,7 @@ pub struct ProgramExecutor {}
 
 impl ProgramExecutor {
     pub fn execute(
-        mut file: impl OpenedResource,
+        mut file: impl Resource,
         args: &[&str],
         parent_pid: u64,
     ) -> Result<Process, ExecError> {

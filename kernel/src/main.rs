@@ -17,6 +17,8 @@ use BazOS::{
 };
 use bootloader::{BootInfo, entry_point};
 use common::path::Path;
+#[cfg(test)]
+use common::qemu;
 use x86_64::VirtAddr;
 
 entry_point!(main);
@@ -50,6 +52,7 @@ fn add_process_from_file(file: &str, args: &[&str]) {
         .open(Path::new(file).unwrap())
         .unwrap();
 
-    let process = ProgramExecutor::execute(file, args, 0);
-    Scheduler::lock().add_process(process.unwrap());
+    let mut process = ProgramExecutor::execute(file, args, 0).unwrap();
+    // process.replace_resource(FileDescriptorIndex::STDIN);
+    Scheduler::lock().add_process(process);
 }

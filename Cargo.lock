@@ -64,6 +64,7 @@ name = "common"
 version = "0.1.0"
 dependencies = [
  "lazy_static",
+ "pc-keyboard",
  "spin 0.5.2",
  "uart_16550",
  "x86_64",

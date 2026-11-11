@@ -7,6 +7,7 @@ extern crate alloc;
 pub mod fs;
 pub mod interrupts;
 pub mod io_error;
+pub mod keyboard;
 pub mod opened_resource;
 pub mod path;
 pub mod qemu;
