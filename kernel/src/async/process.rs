@@ -16,7 +16,6 @@ use common::fs::FileDescriptorIndex;
 use common::opened_resource::Resource;
 use core::ops::DerefMut;
 use core::ptr::copy_nonoverlapping;
-use spin::{Mutex, MutexGuard};
 use x86_64::VirtAddr;
 use x86_64::structures::paging::mapper::MapToError;
 use x86_64::structures::paging::page::PageRange;
@@ -32,7 +31,7 @@ pub struct Process {
     name: String,
     page_table: OffsetPageTable<'static>,
     last_thread_id: u64,
-    resources: BTreeMap<FileDescriptorIndex, Arc<Mutex<dyn Resource>>>,
+    resources: BTreeMap<FileDescriptorIndex, Arc<dyn Resource>>,
 
     memory_regions: Vec<PageRange>,
     threads_stack: BTreeMap<ThreadId, PageRange>,
@@ -356,10 +355,7 @@ impl Process {
         }
     }
 
-    pub fn add_resource(
-        &mut self,
-        resource: Arc<Mutex<dyn Resource>>,
-    ) -> Option<FileDescriptorIndex> {
+    pub fn add_resource(&mut self, resource: Arc<dyn Resource>) -> Option<FileDescriptorIndex> {
         for i in 0..MAX_RESOURCES {
             match self.resources.entry(FileDescriptorIndex::new(i)) {
                 Entry::Vacant(entry) => {
@@ -376,28 +372,21 @@ impl Process {
     pub fn clone_resource(
         &self,
         file_descriptor: &FileDescriptorIndex,
-    ) -> Option<Arc<Mutex<dyn Resource>>> {
+    ) -> Option<Arc<dyn Resource>> {
         Some(Arc::clone(self.resources.get(file_descriptor)?))
-    }
-
-    pub fn lock_resource(
-        &mut self,
-        file_descriptor: &FileDescriptorIndex,
-    ) -> Option<MutexGuard<'_, dyn Resource + 'static>> {
-        Some(self.resources.get(file_descriptor)?.lock())
     }
 
     pub fn remove_resource(
         &mut self,
         file_descriptor: &FileDescriptorIndex,
-    ) -> Option<Arc<Mutex<dyn Resource>>> {
+    ) -> Option<Arc<dyn Resource>> {
         self.resources.remove(file_descriptor)
     }
 
     pub fn replace_resource(
         &mut self,
         file_descriptor: FileDescriptorIndex,
-        new: Arc<Mutex<dyn Resource>>,
+        new: Arc<dyn Resource>,
     ) -> Option<()> {
         if file_descriptor.as_u64() >= MAX_RESOURCES {
             return None;

@@ -53,7 +53,7 @@ impl FileDescriptor for FileDescriptorResource {
 }
 
 impl Resource for FileDescriptorResource {
-    fn read_into(&mut self, buffer: &mut [u8; BLOCK_SIZE]) -> Result<usize, ReadError> {
+    fn read_into(&self, buffer: &mut [u8; BLOCK_SIZE]) -> Result<usize, ReadError> {
         let read = syscall(
             Read,
             self.fd_index.as_u64(),
@@ -67,7 +67,7 @@ impl Resource for FileDescriptorResource {
         }
     }
 
-    fn write(&mut self, data: &[u8]) -> Result<(), ()> {
+    fn write(&self, data: &[u8]) -> Result<(), ()> {
         let wrote = syscall(
             Write,
             self.fd_index.as_u64(),

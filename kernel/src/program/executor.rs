@@ -20,7 +20,7 @@ pub struct ProgramExecutor {}
 
 impl ProgramExecutor {
     pub fn execute(
-        mut file: impl Resource,
+        file: impl Resource,
         args: &[&str],
         parent_pid: u64,
     ) -> Result<Process, ExecError> {

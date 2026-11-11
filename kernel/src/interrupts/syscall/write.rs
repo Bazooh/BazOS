@@ -13,9 +13,10 @@ pub fn write_handler(file_descriptor: FileDescriptorIndex, buffer: Result<&[u8],
         .get_process(thread_id.pid)
         .expect("Could not get process from pid");
 
-    match current_process.lock().lock_resource(&file_descriptor) {
+    let resource = current_process.lock().clone_resource(&file_descriptor);
+    match resource {
         None => -1,
-        Some(mut resource) => {
+        Some(resource) => {
             if buffer.len() > i64::MAX as usize {
                 return -3;
             }

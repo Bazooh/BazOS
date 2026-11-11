@@ -1,29 +1,11 @@
 use conquer_once::spin::OnceCell;
 use futures_util::StreamExt;
-use pc_keyboard::{Keyboard, KeyboardLayout, ScancodeSet, ScancodeSet1, layouts};
+use pc_keyboard::{ScancodeSet, ScancodeSet1};
 
 use super::stream::Streamer;
 use crate::io::key_events;
-use crate::tty::TTY;
 
 pub static SCANCODE_STREAMER: OnceCell<Streamer<u8>> = OnceCell::uninit();
-
-trait KeyProcessor {
-    fn process(&mut self, key_code: u8);
-}
-
-impl<L: KeyboardLayout, S: ScancodeSet> KeyProcessor for Keyboard<L, S> {
-    fn process(&mut self, scancode: u8) {
-        let Ok(Some(key_event)) = self.add_byte(scancode) else {
-            return;
-        };
-
-        key_events::publish(key_event.clone());
-        if let Some(key) = self.process_keyevent(key_event) {
-            TTY.handle(key);
-        }
-    }
-}
 
 pub fn init_keyboard_streamer() {
     SCANCODE_STREAMER
@@ -37,13 +19,11 @@ pub async fn handle_key_presses() {
         .expect("Streamer uninit")
         .stream();
 
-    let mut keyboard = Keyboard::new(
-        ScancodeSet1::new(),
-        layouts::Us104Key,
-        pc_keyboard::HandleControl::Ignore,
-    );
+    let mut scancode_set = ScancodeSet1::new();
 
     while let Some(scancode) = stream.next().await {
-        keyboard.process(scancode);
+        if let Ok(Some(event)) = scancode_set.advance_state(scancode) {
+            key_events::publish(&event);
+        }
     }
 }

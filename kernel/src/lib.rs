@@ -15,6 +15,9 @@ use crate::memory::init_memory;
 use bootloader::BootInfo;
 #[cfg(test)]
 use bootloader::entry_point;
+
+#[cfg(test)]
+use common::qemu;
 use common::serial_println;
 
 pub mod r#async;
@@ -26,7 +29,7 @@ pub mod io;
 pub mod memory;
 pub mod out;
 pub mod program;
-mod tty;
+pub mod tty;
 mod utils;
 
 #[cfg(test)]
@@ -46,6 +49,7 @@ pub fn init(boot_info: &'static BootInfo) {
     init_memory(boot_info.physical_memory_offset, &boot_info.memory_map);
     init_async();
     io::device::init();
+    tty::init();
 }
 
 #[cfg(not(test))]

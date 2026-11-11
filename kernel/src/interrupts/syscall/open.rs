@@ -9,7 +9,6 @@ use common::keyboard::KEY_EVENTS_PATH;
 use common::opened_resource::Resource;
 use common::path::Path;
 use common::syscall_errors::open::OpenError;
-use spin::Mutex;
 
 pub fn open_handler(path: Result<&str, ()>) -> i64 {
     let Ok(path) = path else {
@@ -32,7 +31,7 @@ pub fn open_handler(path: Result<&str, ()>) -> i64 {
                 .expect("Driver not initialized")
                 .open(path)
             {
-                Ok(resource) => Arc::new(Mutex::new(resource)),
+                Ok(resource) => Arc::new(resource),
                 Err(IOError::DoesNotExist(..)) => return OpenError::DoesNotExist.into(),
                 Err(_) => unreachable!(),
             }
@@ -45,9 +44,9 @@ pub fn open_handler(path: Result<&str, ()>) -> i64 {
     }
 }
 
-fn open_device(path: &str) -> Option<Arc<Mutex<dyn Resource>>> {
+fn open_device(path: &str) -> Option<Arc<dyn Resource>> {
     match path {
-        KEY_EVENTS_PATH => Some(Arc::new(Mutex::new(KeyEvents::open()))),
+        KEY_EVENTS_PATH => Some(Arc::new(KeyEvents::open())),
         _ => None,
     }
 }

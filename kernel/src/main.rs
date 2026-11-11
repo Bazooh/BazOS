@@ -12,10 +12,12 @@ use BazOS::r#async::executor::Executor;
 use BazOS::r#async::process::Process;
 use BazOS::r#async::scheduling::scheduler::Scheduler;
 use BazOS::r#async::scheduling::worker::Worker;
+use BazOS::tty::TTY;
 use BazOS::{
     fs::driver::DiskDriver, init, io::disk::driver::DISK_DRIVER, program::executor::ProgramExecutor,
 };
 use bootloader::{BootInfo, entry_point};
+use common::fs::FileDescriptorIndex;
 use common::path::Path;
 #[cfg(test)]
 use common::qemu;
@@ -30,9 +32,7 @@ pub fn main(boot_info: &'static BootInfo) -> ! {
 
     init(boot_info);
 
-    // add_process_from_file("terminal", &[]);
-    add_process_from_file("hello_world", &[]);
-    // add_process_from_file("commands_echo", &["Hello, terminal!222", "LLLL"]);
+    add_process_from_file("terminal", &[]);
 
     let kernel_process = Process::kernel(
         String::from("kernel"),
@@ -53,6 +53,8 @@ fn add_process_from_file(file: &str, args: &[&str]) {
         .unwrap();
 
     let mut process = ProgramExecutor::execute(file, args, 0).unwrap();
-    // process.replace_resource(FileDescriptorIndex::STDIN);
+    process.replace_resource(FileDescriptorIndex::STDIN, TTY.stdin());
+    process.replace_resource(FileDescriptorIndex::STDOUT, TTY.stdout());
+    process.replace_resource(FileDescriptorIndex::STDERR, TTY.stderr());
     Scheduler::lock().add_process(process);
 }
