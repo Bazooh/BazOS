@@ -1,5 +1,7 @@
-pub trait BlockDevice {
-    fn read(&mut self, block_id: usize, buf: &mut [u8]);
+use crate::io::disk::driver::BlockId;
 
-    fn write(&mut self, block_id: usize, block: &[u8]);
+pub trait BlockDevice {
+    fn read(&mut self, block_id: BlockId, buf: &mut [u8]);
+
+    fn write(&mut self, block_id: BlockId, block: &[u8]);
 }

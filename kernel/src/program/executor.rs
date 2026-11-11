@@ -3,11 +3,13 @@ use core::ptr::{copy_nonoverlapping, write_bytes};
 use crate::memory::memory_mapper::MemoryMapper;
 use crate::{
     r#async::process::Process,
-    fs::{elf::header::ElfHeader, file::File},
+    fs::elf::header::ElfHeader,
     memory::PAGE_SIZE,
     utils::interval::{Interval, merge_intervals},
 };
 use alloc::{string::String, vec::Vec};
+use common::opened_resource::OpenedResource;
+use common::syscall_errors::exec::ExecError;
 use x86_64::structures::paging::page::PageRange;
 use x86_64::{
     VirtAddr,
@@ -17,9 +19,13 @@ use x86_64::{
 pub struct ProgramExecutor {}
 
 impl ProgramExecutor {
-    pub fn execute(file: impl File, args: &[&str], parent_pid: u64) -> Process {
-        let content = file.read();
-        let elf_header = ElfHeader::parse(&content).expect("Not executable");
+    pub fn execute(
+        mut file: impl OpenedResource,
+        args: &[&str],
+        parent_pid: u64,
+    ) -> Result<Process, ExecError> {
+        let content = file.read_all()?.ok_or(ExecError::EmptyFile)?;
+        let elf_header = ElfHeader::parse(&content).map_err(|_| ExecError::NotExecutable)?;
 
         let mut intervals = Vec::with_capacity(elf_header.n_program_headers());
         for program_header in elf_header.program_headers() {
@@ -29,6 +35,14 @@ impl ProgramExecutor {
 
             let virt_addr = program_header.virt_addr();
             let mem_size = program_header.mem_size();
+            let file_size = program_header.file_size();
+            let file_end = program_header
+                .offset()
+                .checked_add(file_size)
+                .ok_or(ExecError::NotExecutable)?;
+            if file_end > content.len() as u64 || file_size > mem_size {
+                return Err(ExecError::NotExecutable);
+            }
             assert!(
                 program_header.align() <= PAGE_SIZE,
                 "Alignment not supported"
@@ -87,6 +101,6 @@ impl ProgramExecutor {
             }
         }
 
-        process
+        Ok(process)
     }
 }

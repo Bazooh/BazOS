@@ -1,5 +1,6 @@
 use core::cell::OnceCell;
 
+use crate::io::disk::driver::BlockId;
 use crate::memory::memory_mapper::MemoryMapper;
 use crate::{
     fs::device::BlockDevice,
@@ -25,19 +26,19 @@ pub struct Device {
 }
 
 impl BlockDevice for OnceCell<Device> {
-    fn read(&mut self, block_id: usize, buf: &mut [u8]) {
+    fn read(&mut self, block_id: BlockId, buf: &mut [u8]) {
         self.get_mut()
             .expect("Block device not initialized")
             .blk
-            .read_blocks(block_id, buf)
+            .read_blocks(block_id.block_id() as usize, buf)
             .expect("Read failed");
     }
 
-    fn write(&mut self, block_id: usize, block: &[u8]) {
+    fn write(&mut self, block_id: BlockId, block: &[u8]) {
         self.get_mut()
             .expect("Block device not initialized")
             .blk
-            .write_blocks(block_id, block)
+            .write_blocks(block_id.block_id() as usize, block)
             .expect("Write failed");
     }
 }

@@ -1,158 +1,211 @@
+use alloc::collections::BTreeMap;
 use core::str::from_utf8;
 
+use crate::fs::device::BlockDevice;
+use crate::io::device::BLOCK_DEVICE;
+use crate::io::disk::{BLOCK_SIZE, driver::BlockId};
 use alloc::string::String;
+use alloc::vec::Vec;
 
-use crate::io::disk::{
-    BLOCK_SIZE,
-    driver::{BlockId, DISK_DRIVER, INodeIndex},
-};
-
+#[derive(Debug)]
 pub enum VirtDiskINode {
     File(VirtDiskFileNode),
     Directory(VirtDiskDirNode),
 }
 
+#[derive(Debug)]
 pub struct VirtDiskFileNode {
-    buffer: [usize; BLOCK_SIZE / 8],
+    name: String,
+    blocks: Vec<BlockId>,
+    size: u64,
 }
 
+#[derive(Debug)]
 pub struct VirtDiskDirNode {
-    buffer: [usize; BLOCK_SIZE / 8],
+    name: String,
+    blocks: BTreeMap<String, BlockId>,
 }
 
-pub fn u8_array_view(buffer: &[usize; BLOCK_SIZE / 8]) -> &[u8; BLOCK_SIZE] {
-    let (prefix, buffer, sufix) = unsafe { buffer.align_to::<u8>() };
-    assert!(prefix.is_empty());
-    assert!(sufix.is_empty());
-    buffer.as_array().unwrap()
+type Block = [u8; BLOCK_SIZE];
+
+type BlockU64 = [u64; BLOCK_SIZE / 8];
+
+trait Constructor {
+    fn new() -> Self;
 }
 
-pub fn u8_array_mut_view(buffer: &mut [usize; BLOCK_SIZE / 8]) -> &mut [u8; BLOCK_SIZE] {
-    let (prefix, buffer, sufix) = unsafe { buffer.align_to_mut::<u8>() };
-    assert!(prefix.is_empty());
-    assert!(sufix.is_empty());
-    buffer.as_mut_array().unwrap()
+impl Constructor for Block {
+    fn new() -> Block {
+        [0; BLOCK_SIZE]
+    }
+}
+
+trait U64BlockConverter {
+    fn as_u64_block(&self) -> &BlockU64;
+
+    fn as_mut_u64_block(&mut self) -> &mut BlockU64;
+}
+
+impl U64BlockConverter for Block {
+    fn as_u64_block(&self) -> &BlockU64 {
+        let (prefix, buffer, suffix) = unsafe { self.align_to::<u64>() };
+        assert_eq!(prefix.len(), 0);
+        assert_eq!(suffix.len(), 0);
+        buffer.as_array().unwrap()
+    }
+
+    fn as_mut_u64_block(&mut self) -> &mut BlockU64 {
+        let (prefix, buffer, suffix) = unsafe { self.align_to_mut::<u64>() };
+        assert_eq!(prefix.len(), 0);
+        assert_eq!(suffix.len(), 0);
+        buffer.as_mut_array().unwrap()
+    }
 }
 
 impl VirtDiskINode {
-    pub fn from_buffer(buffer: [usize; BLOCK_SIZE / 8]) -> Result<Self, String> {
-        let first_bytes = buffer[0].to_le_bytes();
-        if first_bytes[1] != 0 {
-            return Err(String::from("File is locked"));
-        }
+    pub fn read(block_id: BlockId) -> Result<VirtDiskINode, String> {
+        let mut buffer = Block::new();
+        BLOCK_DEVICE.lock().read(block_id, &mut buffer);
+        Self::read_from(&buffer)
+    }
 
-        match first_bytes[0] {
-            0 => Ok(VirtDiskINode::File(VirtDiskFileNode::from_buffer(buffer))),
-            1 => Ok(VirtDiskINode::Directory(VirtDiskDirNode::from_buffer(
-                buffer,
-            ))),
+    pub fn read_name(block_id: BlockId) -> Result<String, String> {
+        let mut buffer = Block::new();
+
+        BLOCK_DEVICE.lock().read(block_id, &mut buffer);
+
+        match buffer[0] {
+            0 => Ok(VirtDiskFileNode::read_name(&buffer).ok_or("Invalid name")?),
+            1 => Ok(VirtDiskDirNode::read_name(&buffer).ok_or("Invalid name")?),
             _ => Err(String::from("Invalid inode type")),
         }
     }
 
-    pub fn name(&self) -> Option<&str> {
-        match self {
-            VirtDiskINode::File(file_node) => file_node.name(),
-            VirtDiskINode::Directory(dir_node) => dir_node.name(),
+    fn read_from(buffer: &Block) -> Result<VirtDiskINode, String> {
+        if buffer[1] != 0 {
+            return Err(String::from("File is locked"));
         }
-    }
 
-    pub fn buffer(&self) -> &[u8; BLOCK_SIZE] {
-        match self {
-            VirtDiskINode::File(file_node) => file_node.buffer(),
-            VirtDiskINode::Directory(dir_node) => dir_node.buffer(),
+        match buffer[0] {
+            0 => Ok(VirtDiskINode::File(
+                VirtDiskFileNode::read_from(buffer).ok_or("Invalid buffer")?,
+            )),
+            1 => Ok(VirtDiskINode::Directory(
+                VirtDiskDirNode::read_from(buffer).ok_or("Invalid buffer")?,
+            )),
+            _ => Err(String::from("Invalid inode type")),
         }
     }
 }
 
 impl VirtDiskFileNode {
-    pub fn new(name: &str) -> Option<Self> {
-        let bytes = name.as_bytes();
-        if bytes.len() > 20 {
+    fn new(name: &str) -> Option<Self> {
+        if name.as_bytes().len() > 20 {
             return None;
         }
 
-        let mut buffer = [0usize; BLOCK_SIZE / 8];
-        let view = u8_array_mut_view(&mut buffer);
-        view[1] = 1;
-        view[12..bytes.len() + 12].copy_from_slice(bytes);
-        Some(VirtDiskFileNode { buffer })
+        Some(VirtDiskFileNode {
+            name: String::from(name),
+            blocks: Vec::new(),
+            size: 0,
+        })
     }
 
-    pub fn from_buffer(buffer: [usize; BLOCK_SIZE / 8]) -> Self {
-        VirtDiskFileNode { buffer }
+    fn read_from(buffer: &Block) -> Option<Self> {
+        let size = u64::from_le_bytes(buffer[4..12].try_into().unwrap());
+        Some(VirtDiskFileNode {
+            name: Self::read_name(buffer)?,
+            blocks: blocks(&buffer, BlockId::data),
+            size,
+        })
     }
 
-    pub fn name(&self) -> Option<&str> {
-        let raw = &self.buffer()[12..32];
-        let len = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
-        from_utf8(&raw[..len]).ok()
+    fn read_name(buffer: &Block) -> Option<String> {
+        Some(String::from(name(buffer, 12, 32)?))
     }
 
-    pub fn buffer(&self) -> &[u8; BLOCK_SIZE] {
-        u8_array_view(&self.buffer)
-    }
-
-    pub fn size(&self) -> usize {
-        usize::from_le_bytes(self.buffer()[4..12].try_into().unwrap())
+    pub fn name(&self) -> &str {
+        self.name.as_str()
     }
 
     pub fn data_blocks(&self) -> impl Iterator<Item = BlockId> {
-        self.buffer[4..]
-            .iter()
-            .take_while(|block_id| **block_id != 0)
-            .map(|block_id| BlockId::raw(*block_id))
+        self.blocks.iter().copied()
+    }
+
+    pub fn data_block(&self, index: usize) -> Option<BlockId> {
+        self.blocks.get(index).copied()
     }
 }
 
 impl VirtDiskDirNode {
-    pub fn from_buffer(buffer: [usize; BLOCK_SIZE / 8]) -> Self {
-        VirtDiskDirNode { buffer }
-    }
+    fn new(name: &str) -> Option<Self> {
+        if name.as_bytes().len() > 28 {
+            return None;
+        }
 
-    pub fn name(&self) -> Option<&str> {
-        let raw = &self.buffer()[1..32];
-        let len = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
-        from_utf8(&raw[..len]).ok()
+        Some(VirtDiskDirNode {
+            name: String::from(name),
+            blocks: BTreeMap::new(),
+        })
     }
+    fn read_from(buffer: &Block) -> Option<Self> {
+        let mut blocks_map = BTreeMap::new();
+        for block in blocks(buffer, BlockId::inode) {
+            core::assert_matches!(block, BlockId::INode(..));
+            let name = VirtDiskINode::read_name(block).ok()?;
+            blocks_map.insert(name, block);
+        }
 
-    pub fn buffer(&self) -> &[u8; BLOCK_SIZE] {
-        u8_array_view(&self.buffer)
-    }
-
-    fn files_inode_index(&self) -> impl Iterator<Item = INodeIndex> {
-        self.buffer[4..].iter().filter_map(|inode_index| {
-            if *inode_index == 0 {
-                None
-            } else {
-                Some(INodeIndex::new(*inode_index))
-            }
+        Some(VirtDiskDirNode {
+            name: Self::read_name(buffer)?,
+            blocks: blocks_map,
         })
     }
 
-    pub fn get(&self, name: &str) -> Option<(INodeIndex, VirtDiskINode)> {
-        for inode_index in self.files_inode_index() {
-            // TODO: Different exceptions
-            let inode = DISK_DRIVER
-                .try_get()
-                .unwrap()
-                .get_inode(inode_index)
-                .unwrap();
-            if inode.name()? == name {
-                return Some((inode_index, inode));
-            }
-        }
-        None
+    fn read_name(buffer: &Block) -> Option<String> {
+        Some(String::from(name(buffer, 4, 32)?))
     }
 
-    pub fn add_file(&mut self, _name: &str, file_inode_index: INodeIndex) -> Option<()> {
-        for inode_index in self.buffer[4..].iter_mut() {
-            if *inode_index == 0 {
-                *inode_index = file_inode_index.as_usize();
-                return Some(());
-            }
-        }
+    fn files(&self) -> impl Iterator<Item = BlockId> {
+        self.blocks.values().copied()
+    }
 
-        None
+    pub fn read(&self, name: &str) -> Option<VirtDiskINode> {
+        let block_id = *self.blocks.get(name)?;
+        VirtDiskINode::read(block_id).ok()
+    }
+}
+fn name(buffer: &Block, start: usize, end: usize) -> Option<&str> {
+    let raw = &buffer[start..end];
+    let len = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
+    from_utf8(&raw[..len]).ok()
+}
+
+fn blocks(buffer: &Block, block_creator: impl Fn(u64) -> BlockId) -> Vec<BlockId> {
+    let mut blocks = Vec::new();
+    add_blocks(&mut blocks, buffer, 4, block_creator);
+    blocks
+}
+
+fn add_blocks(
+    blocks: &mut Vec<BlockId>,
+    buffer: &Block,
+    start: usize,
+    block_creator: impl Fn(u64) -> BlockId,
+) {
+    let buffer = buffer.as_u64_block();
+    for block in start..63 {
+        let address = buffer[block];
+        if address == 0 {
+            return;
+        }
+        blocks.push(block_creator(address));
+    }
+    if buffer[63] != 0 {
+        let mut new_buffer = [0u8; BLOCK_SIZE];
+        BLOCK_DEVICE
+            .lock()
+            .read(BlockId::inode(buffer[63]), &mut new_buffer);
+        add_blocks(blocks, &new_buffer, 0, block_creator);
     }
 }

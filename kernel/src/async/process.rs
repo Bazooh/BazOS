@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::collections::btree_map::Entry;
 use core::fmt::{Debug, Formatter};
 
 use crate::r#async::scheduling::scheduler::Scheduler;
@@ -10,6 +11,8 @@ use crate::memory::memory_mapper::{KernelMapper, MemoryMapper, MemoryTranslator}
 use crate::memory::{PAGE_SIZE, PROGRAM_ALLOCATOR, PROGRAM_HEAP_START};
 use alloc::string::String;
 use alloc::vec::Vec;
+use common::fs::FileDescriptor;
+use common::opened_resource::OpenedResource;
 use core::ops::DerefMut;
 use core::ptr::copy_nonoverlapping;
 use x86_64::VirtAddr;
@@ -19,12 +22,15 @@ use x86_64::structures::paging::{
     Mapper, OffsetPageTable, Page, PageTable, PageTableFlags, Size4KiB,
 };
 
+const MAX_RESOURCES: u64 = 128;
+
 pub struct Process {
     pid: u64,
     parent_pid: u64,
     name: String,
     page_table: OffsetPageTable<'static>,
     last_thread_id: u64,
+    resources: BTreeMap<FileDescriptor, Box<dyn OpenedResource>>,
 
     memory_regions: Vec<PageRange>,
     threads_stack: BTreeMap<ThreadId, PageRange>,
@@ -48,6 +54,7 @@ impl Process {
             name,
             page_table: Self::create_user_table(),
             last_thread_id: 0,
+            resources: BTreeMap::new(),
 
             memory_regions: Vec::new(),
             threads_stack: BTreeMap::new(),
@@ -88,6 +95,7 @@ impl Process {
                 MemoryMapper::page_table_from_addr(MemoryMapper::kernel().addr())
             },
             last_thread_id: 0,
+            resources: BTreeMap::new(),
 
             memory_regions: Vec::new(),
             threads_stack: BTreeMap::new(),
@@ -107,6 +115,7 @@ impl Process {
             name,
             page_table: Self::create_user_table(),
             last_thread_id: 0,
+            resources: BTreeMap::new(),
 
             memory_regions: Vec::new(),
             threads_stack: BTreeMap::new(),
@@ -239,11 +248,12 @@ impl Process {
     fn create_user_table() -> OffsetPageTable<'static> {
         let page = (&PROGRAM_ALLOCATOR)
             .allocate_frames_zeroed(1)
-            .expect("alloc failed")
+            .expect("no more memory")
             .start;
         let level_4_table = unsafe { &mut *page.start_address().as_mut_ptr::<PageTable>() };
 
         // TODO: If a lvl4 entry is after added to MEMORY_MAPPER it won't be added here
+        // maybe it is not a problem as the kernel do not allocate more memory during execution
         for i in 0..256 {
             level_4_table[i] = MemoryMapper::kernel().copy_lvl4_entry(i);
         }
@@ -342,6 +352,41 @@ impl Process {
             start: candidate,
             end: candidate + n_pages,
         }
+    }
+
+    pub fn add_resource(&mut self, resource: Box<dyn OpenedResource>) -> Option<FileDescriptor> {
+        for i in 0..MAX_RESOURCES {
+            match self.resources.entry(FileDescriptor::new(i)) {
+                Entry::Vacant(entry) => {
+                    let file_descriptor = *entry.key();
+                    entry.insert(resource);
+                    return Some(file_descriptor);
+                }
+                Entry::Occupied(_) => {}
+            }
+        }
+        None
+    }
+
+    pub fn get_resource(
+        &self,
+        file_descriptor: &FileDescriptor,
+    ) -> Option<&Box<dyn OpenedResource>> {
+        self.resources.get(file_descriptor)
+    }
+
+    pub fn get_resource_mut(
+        &mut self,
+        file_descriptor: &FileDescriptor,
+    ) -> Option<&mut Box<dyn OpenedResource>> {
+        self.resources.get_mut(file_descriptor)
+    }
+
+    pub fn remove_resource(
+        &mut self,
+        file_descriptor: &FileDescriptor,
+    ) -> Option<Box<dyn OpenedResource>> {
+        self.resources.remove(file_descriptor)
     }
 
     pub fn pid(&self) -> u64 {

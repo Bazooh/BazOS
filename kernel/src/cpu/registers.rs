@@ -43,3 +43,4 @@ macro_rules! register {
 
 register!(cr3);
 register!(rsp);
+register!(rdi);

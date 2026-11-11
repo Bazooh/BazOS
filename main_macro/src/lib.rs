@@ -1,22 +1,9 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use std::sync::atomic::{AtomicBool, Ordering};
 use syn::{ItemFn, parse_macro_input};
-
-static START_DEFINED: AtomicBool = AtomicBool::new(false);
 
 #[proc_macro_attribute]
 pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    // Enforce uniqueness
-    if START_DEFINED.swap(true, Ordering::SeqCst) {
-        return syn::Error::new_spanned(
-            proc_macro2::TokenStream::from(item),
-            "`#[main]` may only be used once",
-        )
-        .to_compile_error()
-        .into();
-    }
-
     let input = parse_macro_input!(item as ItemFn);
 
     let fn_name = &input.sig.ident;

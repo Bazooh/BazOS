@@ -9,7 +9,7 @@ pub const ELF_PROGRAM_HEADER_SIZE: usize = 0x38;
 pub enum ElfProgramType {
     Load = 1,
     Dynamic = 2,
-    InterpretorPath = 3,
+    InterpreterPath = 3,
     Note = 4,
     ProgramHeaderTable = 6,
     ThreadLocalStorage = 7,
@@ -26,7 +26,7 @@ impl TryFrom<u32> for ElfProgramType {
         match value {
             1 => Ok(ElfProgramType::Load),
             2 => Ok(ElfProgramType::Dynamic),
-            3 => Ok(ElfProgramType::InterpretorPath),
+            3 => Ok(ElfProgramType::InterpreterPath),
             4 => Ok(ElfProgramType::Note),
             6 => Ok(ElfProgramType::ProgramHeaderTable),
             7 => Ok(ElfProgramType::ThreadLocalStorage),

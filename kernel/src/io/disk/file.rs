@@ -1,54 +1,44 @@
-use alloc::{boxed::Box, string::String, vec::Vec};
-
+use crate::io::disk::inode::VirtDiskFileNode;
 use crate::{
-    fs::{device::BlockDevice, file::File},
-    io::{
-        device::BLOCK_DEVICE,
-        disk::{
-            BLOCK_SIZE,
-            driver::{DISK_DRIVER, INodeIndex},
-            inode::VirtDiskINode,
-        },
-    },
+    fs::device::BlockDevice,
+    io::{device::BLOCK_DEVICE, disk::BLOCK_SIZE},
 };
+use common::opened_resource::OpenedResource;
+use common::syscall_errors::read::ReadError;
 
 pub struct VirtDiskFile {
-    name: String,
-    inode_index: INodeIndex,
+    inode: VirtDiskFileNode,
+    current_block_index: usize,
 }
 
 impl VirtDiskFile {
-    pub fn new(name: String, inode_index: INodeIndex) -> Self {
-        Self { name, inode_index }
+    pub fn new(inode: VirtDiskFileNode) -> Result<VirtDiskFile, ()> {
+        Ok(VirtDiskFile {
+            inode,
+            current_block_index: 0,
+        })
     }
 }
 
-impl File for VirtDiskFile {
-    fn read(&self) -> Box<[u8]> {
-        let VirtDiskINode::File(inode) = DISK_DRIVER
-            .try_get()
-            .unwrap()
-            .get_inode(self.inode_index)
-            .unwrap()
-        else {
-            panic!("File is not a file")
+impl OpenedResource for VirtDiskFile {
+    fn read_into(&mut self, buffer: &mut [u8; BLOCK_SIZE]) -> Result<usize, ReadError> {
+        let Some(block) = self.inode.data_block(self.current_block_index) else {
+            return Ok(0);
         };
-
-        let mut content = Vec::with_capacity(inode.size());
-        let mut buffer = [0u8; BLOCK_SIZE];
-        for data in inode.data_blocks() {
-            BLOCK_DEVICE.lock().read(data.as_usize(), &mut buffer);
-            content.extend_from_slice(&buffer);
-        }
-
-        content.into_boxed_slice()
+        BLOCK_DEVICE.lock().read(block, buffer);
+        self.current_block_index += 1;
+        Ok(BLOCK_SIZE)
     }
 
-    fn write(&mut self, _data: &[u8]) {}
-
-    fn close(&mut self) {}
+    fn write(&mut self, _data: &[u8]) -> Result<(), ()> {
+        todo!()
+    }
 
     fn name(&self) -> &str {
-        &self.name
+        self.inode.name()
     }
+}
+
+impl Drop for VirtDiskFile {
+    fn drop(&mut self) {}
 }

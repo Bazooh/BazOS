@@ -1,191 +1,156 @@
-use alloc::{string::String, vec::Vec};
-use conquer_once::noblock::OnceCell;
-
+use crate::io::disk::NUMBER_BLOCKS;
 use crate::{
-    fs::{
-        device::BlockDevice,
-        driver::{DiskDriver, IOError},
-        file::File,
-        path::Path,
-    },
+    fs::{device::BlockDevice, driver::DiskDriver},
     io::{
         device::BLOCK_DEVICE,
         disk::{
             BLOCK_SIZE, DATA_BITMAP_OFFSET, DATA_OFFSET, INODE_BITMAP_OFFSET, INODE_OFFSET,
-            bitmap::VirtDiskBitmap,
-            file::VirtDiskFile,
-            header::VirtDiskHeader,
-            inode::{VirtDiskINode, u8_array_mut_view},
+            bitmap::VirtDiskBitmap, file::VirtDiskFile, header::VirtDiskHeader,
+            inode::VirtDiskINode,
         },
     },
 };
+use alloc::vec::Vec;
+use common::io_error::IOError;
+use common::opened_resource::OpenedResource;
+use common::path::Path;
+use conquer_once::noblock::OnceCell;
 
 #[derive(Debug, Clone, Copy)]
-pub struct BlockId(usize);
-
-impl BlockId {
-    pub fn is_none(&self) -> bool {
-        return self.0 == 0;
-    }
-
-    pub fn inode_bitmap(index: usize) -> Self {
-        BlockId(INODE_BITMAP_OFFSET + index)
-    }
-
-    pub fn data_bitmap(index: usize) -> Self {
-        BlockId(DATA_BITMAP_OFFSET + index)
-    }
-
-    pub fn inode(index: usize) -> Self {
-        BlockId(INODE_OFFSET + index)
-    }
-
-    pub fn data(index: usize) -> Self {
-        BlockId(DATA_OFFSET + index)
-    }
-
-    pub fn as_usize(&self) -> usize {
-        self.0
-    }
-
-    pub fn raw(index: usize) -> Self {
-        BlockId(index)
-    }
+pub enum BlockId {
+    Header,
+    INode(u64),
+    INodeBitmap(u64),
+    Data(u64),
+    DataBitmap(u64),
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct INodeIndex(usize);
-
-impl INodeIndex {
-    pub fn new(index: usize) -> Self {
-        INodeIndex(index)
+impl BlockId {
+    pub fn header() -> BlockId {
+        BlockId::Header
     }
 
-    pub fn is_none(&self) -> bool {
-        self.0 == 0
+    pub fn data_bitmap(index: u64) -> BlockId {
+        BlockId::DataBitmap(index + DATA_BITMAP_OFFSET)
     }
 
-    pub fn to_block_id(&self) -> BlockId {
-        BlockId::inode(self.0)
+    pub fn inode_bitmap(index: u64) -> BlockId {
+        BlockId::INodeBitmap(index + INODE_BITMAP_OFFSET)
     }
 
-    pub fn as_usize(&self) -> usize {
-        self.0
+    pub fn inode_bitmaps() -> impl Iterator<Item = BlockId> {
+        (INODE_BITMAP_OFFSET..INODE_OFFSET).map(|block_id| BlockId::raw(block_id).unwrap())
+    }
+
+    pub fn inode(index: u64) -> BlockId {
+        BlockId::INode(index + INODE_OFFSET)
+    }
+
+    pub fn data(index: u64) -> BlockId {
+        BlockId::Data(index + DATA_OFFSET)
+    }
+
+    pub fn block_id(&self) -> u64 {
+        match self {
+            BlockId::Header => 0,
+            BlockId::DataBitmap(block_id) => *block_id,
+            BlockId::INodeBitmap(block_id) => *block_id,
+            BlockId::INode(block_id) => *block_id,
+            BlockId::Data(block_id) => *block_id,
+        }
+    }
+
+    pub fn index(&self) -> u64 {
+        match self {
+            BlockId::Header => 0,
+            BlockId::DataBitmap(block_id) => *block_id - DATA_BITMAP_OFFSET,
+            BlockId::INodeBitmap(block_id) => *block_id - INODE_BITMAP_OFFSET,
+            BlockId::INode(block_id) => *block_id - INODE_OFFSET,
+            BlockId::Data(block_id) => *block_id - DATA_OFFSET,
+        }
+    }
+
+    pub fn raw(block_id: u64) -> Option<Self> {
+        match block_id {
+            DATA_BITMAP_OFFSET..INODE_BITMAP_OFFSET => Some(BlockId::DataBitmap(block_id)),
+            INODE_BITMAP_OFFSET..INODE_OFFSET => Some(BlockId::INodeBitmap(block_id)),
+            INODE_OFFSET..DATA_OFFSET => Some(BlockId::INode(block_id)),
+            DATA_OFFSET..NUMBER_BLOCKS => Some(BlockId::Data(block_id)),
+            _ => None,
+        }
     }
 }
 
 pub struct VirtDiskDriver {
     header: VirtDiskHeader,
-    root_dir_index: INodeIndex,
+    root_dir: BlockId,
 }
 
 pub static DISK_DRIVER: OnceCell<VirtDiskDriver> = OnceCell::uninit();
 
 impl VirtDiskDriver {
-    fn flip_free_inode_index(&self) -> Option<INodeIndex> {
+    fn flip_free_inode_index(&self) -> Option<BlockId> {
         let mut buffer = [0u8; BLOCK_SIZE];
-        for bitmap_index in self.header.inodes_bitmap_indexes() {
+        for inode_bitmap in BlockId::inode_bitmaps() {
             let mut device = BLOCK_DEVICE.lock();
-            device.read(bitmap_index.0, &mut buffer);
+            device.read(inode_bitmap, &mut buffer);
             let bitmap = VirtDiskBitmap::from_buffer(&buffer);
             if let Some(index) = bitmap.find_zero() {
                 buffer[index / u64::BITS as usize] |= 1 << (index % u64::BITS as usize); // TODO: verify direction
-                device.write(bitmap_index.0, &buffer);
-                return Some(INodeIndex(
-                    (bitmap_index.0 - INODE_BITMAP_OFFSET) * 8 * BLOCK_SIZE + index,
+                device.write(inode_bitmap, &buffer);
+                return Some(BlockId::inode(
+                    inode_bitmap.index() * 8 * BLOCK_SIZE as u64 + index as u64,
                 ));
             }
         }
         None
     }
 
-    pub fn get_inode(&self, index: INodeIndex) -> Result<VirtDiskINode, String> {
-        let mut buffer = [0usize; BLOCK_SIZE / 8];
-        let view = u8_array_mut_view(&mut buffer);
-        BLOCK_DEVICE
-            .lock()
-            .read(index.to_block_id().as_usize(), view);
-        VirtDiskINode::from_buffer(buffer)
-    }
-
-    fn add_file(
-        &self,
-        name: &str,
-        dir_inode_index: INodeIndex,
-        file_inode_index: INodeIndex,
-    ) -> Result<(), IOError> {
-        // TODO: not thread safe
-        match self.get_inode(dir_inode_index).unwrap() {
-            VirtDiskINode::Directory(mut dir) => {
-                let result = dir
-                    .add_file(name, file_inode_index)
-                    .ok_or(IOError::DirectoryFull);
-                BLOCK_DEVICE
-                    .lock()
-                    .write(dir_inode_index.to_block_id().as_usize(), dir.buffer());
-                result
-            }
-            _ => Err(IOError::NotADirectory(String::from(name))),
-        }
+    fn add_file(&self, name: &str, dir_inode: BlockId, file_inode: BlockId) -> Result<(), IOError> {
+        todo!()
     }
 }
 
 impl DiskDriver for VirtDiskDriver {
-    fn create(&self, path: Path) -> Result<impl File, IOError> {
-        let inode_index = self.flip_free_inode_index().ok_or(IOError::NoSpace)?;
+    fn create(&self, path: Path) -> Result<impl OpenedResource, IOError> {
+        let block_id = self
+            .flip_free_inode_index()
+            .ok_or(IOError::NotEnoughSpace)?;
 
         let mut parts: Vec<&str> = path.split();
         let file_name = parts.pop().ok_or(IOError::InvalidPath)?;
 
-        let dir_inode_index = self.root_dir_index;
-        // for part in parts {
-        //     match inode_dir.get(part, self) {
-        //         Some(inode) => match inode {
-        //             VirtDiskINode::File(..) => {
-        //                 return Err(FileCreationError::NotADirectory(String::from(part)));
-        //             }
-        //             VirtDiskINode::Directory(dir_node) => {
-        //                 inode_dir = dir_node;
-        //             }
-        //         },
-        //         None => todo!(),
-        //     };
-        // }
-
-        self.add_file(file_name, dir_inode_index, inode_index)?;
-
-        Ok(VirtDiskFile::new(String::from(file_name), inode_index))
+        Ok(VirtDiskFile::new(todo!()).unwrap())
     }
 
-    fn open(&self, path: Path) -> Result<impl File, IOError> {
+    fn open(&self, path: Path) -> Result<impl OpenedResource, IOError> {
         let mut parts: Vec<&str> = path.split();
         let file_name = parts.pop().ok_or(IOError::InvalidPath)?;
 
-        let dir_inode_index = self.root_dir_index;
-        let VirtDiskINode::Directory(dir_inode) = self.get_inode(dir_inode_index).unwrap() else {
+        let VirtDiskINode::Directory(root) = VirtDiskINode::read(self.root_dir).unwrap() else {
             panic!("Root directory is not a directory");
         };
 
-        match dir_inode.get(file_name) {
-            Some((inode_index, inode)) => match inode {
-                VirtDiskINode::File(..) => {
-                    Ok(VirtDiskFile::new(String::from(file_name), inode_index))
+        match root.read(file_name) {
+            Some(inode) => match inode {
+                VirtDiskINode::File(inode) => {
+                    VirtDiskFile::new(inode).map_err(|e| IOError::AlreadyOpened)
                 }
                 VirtDiskINode::Directory(..) => Err(IOError::CannotOpenADirectory),
             },
-            None => Err(IOError::DoesNotExist),
+            None => Err(IOError::DoesNotExist(path)),
         }
     }
 }
 
 pub fn init() {
     let mut buffer = [0u8; BLOCK_SIZE];
-    BLOCK_DEVICE.lock().read(0, &mut buffer);
+    BLOCK_DEVICE.lock().read(BlockId::header(), &mut buffer);
     let header = VirtDiskHeader::from_buffer(buffer).expect("Disk not compatible");
     DISK_DRIVER
         .try_init_once(|| VirtDiskDriver {
             header,
-            root_dir_index: INodeIndex(0),
+            root_dir: BlockId::inode(0),
         })
         .expect("Disk driver already initialized");
 }

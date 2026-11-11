@@ -17,6 +17,6 @@ pub fn mmap_handler(n_pages: u64) -> i64 {
     i64::from_ne_bytes(available_range.start.start_address().as_u64().to_ne_bytes())
 }
 
-pub fn munmap_handler(addr: VirtAddr, n_pages: u64) -> i64 {
+pub fn munmap_handler(_addr: VirtAddr, _n_pages: u64) -> i64 {
     todo!()
 }

@@ -15,7 +15,7 @@ use x86_64::{
 };
 
 pub const PROGRAM_START: u64 = 0x5000_0000_0000;
-pub const PROGRAM_SIZE: u64 = 1024 * 1024; // 1 MiB
+pub const PROGRAM_SIZE: u64 = 16 * 1024 * 1024; // 16 MiB
 
 const USER_PROGRAM_MAX_DEPTH: usize = compute_max_depth(PROGRAM_SIZE, PAGE_SIZE) as usize;
 

@@ -7,6 +7,13 @@ pub enum SyscallNumber {
     Fork = 2,
     Exec = 3,
     Exit = 4,
+    MMap = 5,
+    MUnmap = 6,
+    Open = 7,
+    Read = 8,
+    Write = 9,
+    Close = 10,
+    DEBUGDisableInterrupts = 11,
 }
 
 pub fn syscall(syscall_number: SyscallNumber, arg0: u64, arg1: u64, arg2: u64, arg3: u64) -> i64 {
@@ -19,7 +26,8 @@ pub fn syscall(syscall_number: SyscallNumber, arg0: u64, arg1: u64, arg2: u64, a
             in("rdx") arg2,
             in("rcx") arg3,
             in("r8")  syscall_number as u64,
-            out("rax") result,
+            lateout("rax") result,
+            clobber_abi("C"),
         );
     }
     result

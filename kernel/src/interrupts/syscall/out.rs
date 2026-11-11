@@ -1,11 +1,11 @@
 use crate::print;
 
-pub fn out_handler(string: Option<&str>) -> i64 {
+pub fn out_handler(string: Result<&str, ()>) -> i64 {
     match string {
-        Some(string) => {
+        Ok(string) => {
             print!("{string}");
             0
         }
-        None => -1,
+        Err(()) => -1,
     }
 }

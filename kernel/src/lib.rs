@@ -7,16 +7,15 @@
 
 extern crate alloc;
 
-#[cfg(test)]
-use common::hlt_loop;
-
-use bootloader::BootInfo;
-#[cfg(test)]
-use bootloader::entry_point;
+use core::panic::PanicInfo;
 
 use crate::r#async::init_async;
 use crate::gdt::init_gdt;
 use crate::memory::init_memory;
+use bootloader::BootInfo;
+#[cfg(test)]
+use bootloader::entry_point;
+use common::serial_println;
 
 pub mod r#async;
 mod cpu;
@@ -46,4 +45,27 @@ pub fn init(boot_info: &'static BootInfo) {
     init_memory(boot_info.physical_memory_offset, &boot_info.memory_map);
     init_async();
     io::device::init();
+}
+
+#[cfg(not(test))]
+#[panic_handler]
+fn panic(info: &PanicInfo) -> ! {
+    common::interrupts::disable();
+    serial_println!("{}\n", info);
+    hlt_loop()
+}
+
+#[cfg(test)]
+#[panic_handler]
+fn panic(info: &PanicInfo) -> ! {
+    common::interrupts::disable();
+    serial_println!("[failed]\n");
+    serial_println!("Error: {}\n", info);
+    qemu::exit(qemu::ExitCode::Failed);
+}
+
+pub fn hlt_loop() -> ! {
+    loop {
+        x86_64::instructions::hlt();
+    }
 }

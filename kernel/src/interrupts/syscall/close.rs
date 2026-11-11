@@ -1,0 +1,16 @@
+use crate::r#async::scheduling::scheduler::Scheduler;
+use crate::r#async::scheduling::worker::Worker;
+use common::fs::FileDescriptor;
+
+pub fn close_handler(file_descriptor: FileDescriptor) -> i64 {
+    let thread_id = Worker::current().current_thread_id().unwrap();
+
+    let current_process = Scheduler::lock()
+        .get_process(thread_id.pid)
+        .expect("Could not get process from pid");
+
+    match current_process.lock().remove_resource(&file_descriptor) {
+        Some(_) => 0,
+        None => -1,
+    }
+}

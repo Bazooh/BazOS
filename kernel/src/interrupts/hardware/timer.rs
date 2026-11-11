@@ -5,7 +5,6 @@ use crate::r#async::scheduling::worker::Worker;
 use crate::gdt::TSS;
 use crate::interrupts::idt::ExceptionStackFrame;
 use alloc::boxed::Box;
-use common::serial_println;
 use x86_64::{PhysAddr, VirtAddr};
 
 pub extern "C" fn timer_handler(_stack_frame: &ExceptionStackFrame) -> Option<Box<ThreadRef>> {
@@ -13,8 +12,6 @@ pub extern "C" fn timer_handler(_stack_frame: &ExceptionStackFrame) -> Option<Bo
         PICS.lock()
             .notify_end_of_interrupt(HardwareInterrupt::Timer as u8);
     }
-
-    serial_println!("timer handler");
 
     Scheduler::lock()
         .pick_thread()

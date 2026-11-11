@@ -1,20 +1,8 @@
-use alloc::string::String;
-
-use crate::fs::{file::File, path::Path};
-
-#[derive(Debug)]
-pub enum IOError {
-    AlreadyExists,
-    DirectoryFull,
-    DoesNotExist,
-    InvalidPath,
-    NameTooLong,
-    NoSpace,
-    NotADirectory(String),
-    CannotOpenADirectory,
-}
+use common::io_error::IOError;
+use common::opened_resource::OpenedResource;
+use common::path::Path;
 
 pub trait DiskDriver {
-    fn create(&self, path: Path) -> Result<impl File, IOError>;
-    fn open(&self, path: Path) -> Result<impl File, IOError>;
+    fn create(&self, path: Path) -> Result<impl OpenedResource, IOError>;
+    fn open(&self, path: Path) -> Result<impl OpenedResource, IOError>;
 }

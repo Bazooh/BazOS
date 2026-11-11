@@ -13,13 +13,10 @@ use BazOS::r#async::process::Process;
 use BazOS::r#async::scheduling::scheduler::Scheduler;
 use BazOS::r#async::scheduling::worker::Worker;
 use BazOS::{
-    fs::{driver::DiskDriver, path::Path},
-    init,
-    io::disk::driver::DISK_DRIVER,
-    program::executor::ProgramExecutor,
+    fs::driver::DiskDriver, init, io::disk::driver::DISK_DRIVER, program::executor::ProgramExecutor,
 };
 use bootloader::{BootInfo, entry_point};
-use common::qemu;
+use common::path::Path;
 use x86_64::VirtAddr;
 
 entry_point!(main);
@@ -31,9 +28,9 @@ pub fn main(boot_info: &'static BootInfo) -> ! {
 
     init(boot_info);
 
-    add_process_from_file("terminal", &[]);
+    // add_process_from_file("terminal", &[]);
     add_process_from_file("hello_world", &[]);
-    add_process_from_file("commands_echo", &["Hello, terminal!222", "LLLL"]);
+    // add_process_from_file("commands_echo", &["Hello, terminal!222", "LLLL"]);
 
     let kernel_process = Process::kernel(
         String::from("kernel"),
@@ -50,9 +47,9 @@ fn add_process_from_file(file: &str, args: &[&str]) {
     let file = DISK_DRIVER
         .try_get()
         .unwrap()
-        .open(Path::new(file))
+        .open(Path::new(file).unwrap())
         .unwrap();
 
     let process = ProgramExecutor::execute(file, args, 0);
-    Scheduler::lock().add_process(process);
+    Scheduler::lock().add_process(process.unwrap());
 }

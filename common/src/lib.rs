@@ -2,35 +2,15 @@
 #![no_main]
 #![feature(custom_test_frameworks)]
 #![test_runner(crate::tests::test_runner)]
-
-use core::panic::PanicInfo;
+extern crate alloc;
 
 pub mod fs;
 pub mod interrupts;
+pub mod io_error;
+pub mod opened_resource;
+pub mod path;
 pub mod qemu;
 pub mod syscall;
+pub mod syscall_errors;
 pub mod tests;
-
-pub fn hlt_loop() -> ! {
-    loop {
-        x86_64::instructions::hlt();
-    }
-}
-
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    interrupts::disable();
-    serial_println!("{}\n", info);
-    // println!("{}", info);
-    hlt_loop();
-}
-
-#[cfg(test)]
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    interrupts::disable();
-    serial_println!("[failed]\n");
-    serial_println!("Error: {}\n", info);
-    qemu::exit(qemu::ExitCode::Failed);
-}
+pub mod utils;

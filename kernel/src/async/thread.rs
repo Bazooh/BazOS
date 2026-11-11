@@ -1,8 +1,7 @@
+use crate::hlt_loop;
 use crate::interrupts::ExceptionStackFrame;
 use crate::memory::PAGE_SIZE;
-use crate::memory::memory_mapper::{KernelMapper, MemoryMapper, MemoryTranslator};
-use alloc::boxed::Box;
-use common::{hlt_loop, serial_println};
+use crate::memory::memory_mapper::{MemoryMapper, MemoryTranslator};
 use core::arch::asm;
 use x86_64::{PhysAddr, VirtAddr};
 

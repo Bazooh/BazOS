@@ -1,3 +1,6 @@
+use crate::disk::inodes::{
+    DataNode, HeaderDirINode, HeaderFileINode, INode, SecondaryDirINode, SecondaryFileINode,
+};
 use crate::disk::{BLOCK_SIZE, path::Path};
 use std::fmt::Debug;
 use std::{
@@ -42,7 +45,7 @@ impl Hash for FileNode {
 }
 
 #[derive(Debug, Eq)]
-struct DirNode {
+pub struct DirNode {
     name: String,
     path: Path,
     children: HashMap<String, Node>,
@@ -69,7 +72,7 @@ pub enum FileCreationError {
 
 impl Node {
     pub fn file(path: Path, content: Box<[u8]>) -> Option<Self> {
-        FileNode::new(path, content).map(|file_node| Node::File(file_node))
+        Some(Node::File(FileNode::new(path, content)?))
     }
 
     pub fn dir(path: Path) -> Option<Self> {
@@ -119,10 +122,10 @@ impl Node {
         }
     }
 
-    pub fn header(&self, inode_map: &HashMap<&Node, (usize, usize)>) -> [u8; BLOCK_SIZE] {
+    pub fn to_inode(&self, inode_count: &mut u64, data_node_count: &mut u64) -> INode {
         match self {
-            Node::File(node) => node.header(inode_map.get(self).unwrap().1),
-            Node::Dir(node) => node.header(inode_map),
+            Node::File(node) => node.to_inode(inode_count, data_node_count),
+            Node::Dir(node) => node.to_inode(inode_count, data_node_count),
         }
     }
 }
@@ -142,19 +145,65 @@ impl FileNode {
         self.content.as_ref().chunks(BLOCK_SIZE)
     }
 
-    pub fn n_data_chunks(&self) -> usize {
-        self.content.len().div_ceil(BLOCK_SIZE)
+    fn data_nodes<'a>(
+        chunks: &mut impl Iterator<Item = &'a [u8]>,
+        data_node_count: &mut u64,
+        count: usize,
+    ) -> Vec<DataNode> {
+        let mut data_nodes = Vec::with_capacity(count);
+        while data_nodes.len() < count
+            && let Some(chunk) = chunks.next()
+        {
+            let address = *data_node_count;
+            *data_node_count += 1;
+            let mut data = [0u8; BLOCK_SIZE];
+            data[..chunk.len()].copy_from_slice(chunk);
+            data_nodes.push(DataNode { data, address })
+        }
+        data_nodes
     }
 
-    fn header(&self, data_offset: usize) -> [u8; BLOCK_SIZE] {
-        let mut buffer = [0u8; BLOCK_SIZE];
-        buffer[4..12].copy_from_slice(&self.content.len().to_le_bytes());
-        buffer[12..self.name.len() + 12].copy_from_slice(self.name.as_bytes());
-        assert!(self.n_data_chunks() <= 60);
-        for i in 0..self.n_data_chunks() {
-            buffer[32 + i * 8..40 + i * 8].copy_from_slice(&(data_offset + i).to_le_bytes());
+    fn secondary_header_node<'a>(
+        &self,
+        mut chunks: impl Iterator<Item = &'a [u8]>,
+        inode_count: &mut u64,
+        data_node_count: &mut u64,
+    ) -> Option<Box<INode>> {
+        let data_nodes = Self::data_nodes(&mut chunks, data_node_count, 63);
+        if data_nodes.is_empty() {
+            return None;
         }
-        buffer
+        let address = *inode_count;
+        *inode_count += 1;
+        Some(Box::new(INode::SecondaryFile(SecondaryFileINode {
+            next: self.secondary_header_node(chunks, inode_count, data_node_count),
+            data_nodes,
+            address,
+        })))
+    }
+
+    fn header_node<'a>(
+        &self,
+        mut chunks: impl Iterator<Item = &'a [u8]>,
+        inode_count: &mut u64,
+        data_node_count: &mut u64,
+    ) -> HeaderFileINode {
+        let address = *inode_count;
+        *inode_count += 1;
+
+        let data_nodes = Self::data_nodes(&mut chunks, data_node_count, 59);
+
+        HeaderFileINode {
+            next: self.secondary_header_node(chunks, inode_count, data_node_count),
+            data_nodes,
+            address,
+            length: self.content.len() as u64,
+            name: self.name.clone(),
+        }
+    }
+
+    fn to_inode(&self, inode_count: &mut u64, data_node_count: &mut u64) -> INode {
+        INode::File(self.header_node(self.data_chunks(), inode_count, data_node_count))
     }
 }
 
@@ -198,14 +247,60 @@ impl DirNode {
         next_dir.add_node(node, Path::from_parts(rest))
     }
 
-    fn header(&self, inode_map: &HashMap<&Node, (usize, usize)>) -> [u8; BLOCK_SIZE] {
-        let mut buffer = [0u8; BLOCK_SIZE];
-        buffer[0] = 1;
-        buffer[4..self.name.len() + 4].copy_from_slice(self.name.as_bytes());
-        for (i, (_, node)) in self.children.iter().enumerate() {
-            let (inode_index, _) = inode_map[node];
-            buffer[32 + i * 8..40 + i * 8].copy_from_slice(&inode_index.to_le_bytes());
+    fn inodes<'a>(
+        children: &mut impl Iterator<Item = &'a Node>,
+        inode_count: &mut u64,
+        data_node_count: &mut u64,
+        count: usize,
+    ) -> Vec<INode> {
+        let mut inodes = Vec::with_capacity(count);
+        while inodes.len() < count
+            && let Some(child) = children.next()
+        {
+            inodes.push(child.to_inode(inode_count, data_node_count));
         }
-        buffer
+        inodes
+    }
+
+    fn secondary_header_node<'a>(
+        &self,
+        mut children: impl Iterator<Item = &'a Node>,
+        inode_count: &mut u64,
+        data_node_count: &mut u64,
+    ) -> Option<Box<INode>> {
+        let inodes = Self::inodes(&mut children, inode_count, data_node_count, 63);
+        if inodes.is_empty() {
+            return None;
+        }
+        let address = *inode_count;
+        *inode_count += 1;
+        Some(Box::new(INode::SecondaryDir(SecondaryDirINode {
+            next: self.secondary_header_node(children, inode_count, data_node_count),
+            inodes,
+            address,
+        })))
+    }
+
+    fn header_node<'a>(
+        &self,
+        mut children: impl Iterator<Item = &'a Node>,
+        inode_count: &mut u64,
+        data_node_count: &mut u64,
+    ) -> HeaderDirINode {
+        let address = *inode_count;
+        *inode_count += 1;
+
+        let inodes = Self::inodes(&mut children, inode_count, data_node_count, 59);
+
+        HeaderDirINode {
+            next: self.secondary_header_node(children, inode_count, data_node_count),
+            address,
+            inodes,
+            name: self.name.clone(),
+        }
+    }
+
+    fn to_inode(&self, inode_count: &mut u64, data_node_count: &mut u64) -> INode {
+        INode::Dir(self.header_node(self.children.values(), inode_count, data_node_count))
     }
 }

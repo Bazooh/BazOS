@@ -23,7 +23,7 @@ pub const HEAP_START: u64 = 0x2000_0000_0000;
 pub const HEAP_SIZE: u64 = 1024 * 1024; // 1 MiB
 pub const PAGE_SIZE: u64 = 4096;
 
-pub const PROGRAM_HEAP_START: u64 = 0xffffa00000000000;
+pub const PROGRAM_HEAP_START: u64 = 0xffff_a000_0000_0000;
 
 pub fn init_memory(physical_memory_offset: u64, memory_map: &'static MemoryMap) {
     FRAME_ALLOCATOR

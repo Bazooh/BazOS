@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::fs::{self, OpenOptions, read};
+use std::fs::{OpenOptions, read};
 use std::io::Write;
 use std::process::Command;
 
@@ -31,26 +30,8 @@ const DATA_OFFSET: usize = INODE_OFFSET + N_INODES;
 
 type Block = [u8; BLOCK_SIZE];
 
-fn print_block(block: &Block) {
-    for (i, line) in block.chunks(16).enumerate() {
-        println!(
-            "{i:02x}0:  {}  |{}|",
-            line.iter()
-                .map(|x| format!("{x:02x}"))
-                .collect::<Vec<String>>()
-                .join(" "),
-            line.iter()
-                .map(|x| match *x {
-                    0x20..=0x7e => char::from(*x),
-                    _ => '.',
-                })
-                .collect::<String>()
-        );
-    }
-}
-
 fn main() {
-    fs::create_dir_all("disk").unwrap();
+    std::fs::create_dir_all("disk").unwrap();
 
     let mut root = Node::root_dir();
     for name in BINARIES {
@@ -69,45 +50,23 @@ fn main() {
             .unwrap();
     }
 
-    println!("{:#?}", root);
-
-    let mut inodes: HashMap<&Node, (usize, usize)> = HashMap::new();
-    let mut data_chunks: Vec<Block> = Vec::new();
-    for node in root.iter() {
-        inodes.insert(node, (inodes.len(), data_chunks.len() + DATA_OFFSET));
-        if let Node::File(file) = node {
-            data_chunks.extend(file.data_chunks().map(|chunk| {
-                let mut buffer = [0u8; BLOCK_SIZE];
-                buffer[..chunk.len()].copy_from_slice(&chunk[..chunk.len()]);
-                buffer
-            }));
-        }
-    }
+    let root = root.to_inode(&mut 0, &mut 1);
+    let (inodes, data_nodes) = root.nodes();
+    assert!(inodes.len() <= N_INODES);
 
     let inode_bitmap = {
-        let mut buffer = Box::new([0u8; BLOCK_SIZE]);
-        for (_, (inode_index, _)) in inodes.iter() {
-            buffer[inode_index / 8] |= (1 << (u8::BITS - 1)) >> (inode_index % 8);
+        let mut buffer = Box::new([0u8; BLOCK_SIZE * N_INODE_BITMAPS]);
+        for inode in &inodes {
+            let addr = inode.addr() as usize;
+            buffer[addr / 8] |= (1 << (u8::BITS - 1)) >> (addr % 8);
         }
         buffer
     };
     let data_bitmap = {
         let mut buffers = Box::new([0u8; BLOCK_SIZE * N_DATA_BITMAPS]);
-        for (inode, (_, data_offset)) in &inodes {
-            if let Node::File(file) = inode {
-                for i in 0..file.n_data_chunks() {
-                    let index = data_offset + i;
-                    buffers[index / 8] |= (1 << (u8::BITS - 1)) >> (index % 8);
-                }
-            }
-        }
-        buffers
-    };
-    let inodes = {
-        let mut buffers = Box::new([0u8; BLOCK_SIZE * N_INODES]);
-        for (inode, (inode_index, _)) in &inodes {
-            buffers[inode_index * BLOCK_SIZE..inode_index * BLOCK_SIZE + BLOCK_SIZE]
-                .copy_from_slice(&inode.header(&inodes));
+        for data_node in &data_nodes {
+            let addr = data_node.address as usize;
+            buffers[addr / 8] |= (1 << (u8::BITS - 1)) >> (addr % 8);
         }
         buffers
     };
@@ -124,11 +83,18 @@ fn main() {
         .copy_from_slice(&data_bitmap[..]);
     buffer[INODE_BITMAP_OFFSET * BLOCK_SIZE..INODE_OFFSET * BLOCK_SIZE]
         .copy_from_slice(&inode_bitmap[..]);
-    buffer[INODE_OFFSET * BLOCK_SIZE..DATA_OFFSET * BLOCK_SIZE].copy_from_slice(&inodes[..]);
 
-    let vec = data_chunks.into_iter().flatten().collect::<Vec<u8>>();
-    buffer[DATA_OFFSET * BLOCK_SIZE..DATA_OFFSET * BLOCK_SIZE + vec.len()]
-        .copy_from_slice(vec.as_slice());
+    for inode in inodes {
+        let content = inode.block();
+        let offset = (INODE_OFFSET + inode.addr() as usize) * BLOCK_SIZE;
+        buffer[offset..offset + content.len()].copy_from_slice(content.as_slice());
+    }
+
+    for data_node in data_nodes {
+        let content = data_node.data;
+        let offset = (DATA_OFFSET + data_node.address as usize) * BLOCK_SIZE;
+        buffer[offset..offset + content.len()].copy_from_slice(content.as_slice());
+    }
 
     let mut file = OpenOptions::new()
         .create(true)
