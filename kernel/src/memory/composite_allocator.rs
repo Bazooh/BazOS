@@ -1,3 +1,4 @@
+use crate::interrupts::without_interrupts;
 use crate::memory::{
     HEAP_SIZE, HEAP_START, PAGE_SIZE, binary_allocator::BinaryAllocator,
     buddy_allocator::BuddyAllocator, slab_allocator::SlabAllocator,
@@ -28,16 +29,20 @@ impl<const MAX_DEPTH: usize> KernelAllocator<MAX_DEPTH> {
 }
 
 unsafe impl<const MAX_DEPTH: usize> GlobalAlloc for KernelAllocator<MAX_DEPTH> {
+    // Interrupt handlers allocate, so the lock must never be held with interrupts enabled
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let size = self.slab_allocator.lock().compute_size(layout);
-        self.slab_allocator
-            .lock()
-            .alloc(size)
-            .unwrap_or_else(|| null_mut())
+        without_interrupts(|| {
+            let mut allocator = self.slab_allocator.lock();
+            let size = allocator.compute_size(layout);
+            allocator.alloc(size).unwrap_or_else(|| null_mut())
+        })
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        let size = self.slab_allocator.lock().compute_size(layout);
-        self.slab_allocator.lock().dealloc(ptr, size);
+        without_interrupts(|| {
+            let mut allocator = self.slab_allocator.lock();
+            let size = allocator.compute_size(layout);
+            allocator.dealloc(ptr, size);
+        })
     }
 }

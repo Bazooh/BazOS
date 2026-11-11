@@ -206,8 +206,8 @@ macro_rules! handler {
 macro_rules! handler_for_timer {
     ($handler: ident, $context_switch: ident) => {{
         // Ensure type safety
-        $handler as extern "C" fn(&ExceptionStackFrame) -> Option<Box<ThreadRef>>;
-        $context_switch as extern "C" fn(VirtAddr, Box<ThreadRef>) -> (VirtAddr, PhysAddr);
+        $handler as extern "C" fn(&ExceptionStackFrame) -> bool;
+        $context_switch as extern "C" fn(VirtAddr) -> (VirtAddr, PhysAddr);
 
         #[unsafe(naked)]
         extern "C" fn wrapper() -> () {
@@ -215,9 +215,9 @@ macro_rules! handler_for_timer {
                 save_scratch_reg!(),
                 "mov rdi, rsp",
                 "add rdi, 8*9",
-                "call {handler}", // -> Option<Box<ThreadRef>>
-                "cmp rax, 0",
-                "jne switch",
+                "call {handler}", // -> bool
+                "test al, al",    // only al is defined for a bool
+                "jnz switch",
 
                 // No context switch
                 restore_scratch_reg!(),
@@ -227,7 +227,6 @@ macro_rules! handler_for_timer {
                 "switch:",
                 save_unscratched_reg!(),
                 "mov rdi, rsp",
-                "mov rsi, rax",
                 "call {context_switch}", // -> (VirtAddr, PhysAddr)
                 "mov rsp, rax", // switch stack
                 "mov cr3, rdx", // switch page table
