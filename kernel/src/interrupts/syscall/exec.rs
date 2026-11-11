@@ -22,10 +22,14 @@ pub fn exec_handler(file_path: Result<&str, ()>, args: Result<&[&str], ()>) -> i
 
     let current_pid = Worker::current().current_thread_id().unwrap().pid;
 
-    let process = match ProgramExecutor::execute(file, args, current_pid) {
+    let mut process = match ProgramExecutor::execute(file, args, current_pid) {
         Ok(process) => process,
         Err(_) => return -4,
     };
+    let current_process = Scheduler::lock()
+        .get_process(current_pid)
+        .expect("Could not get process from pid");
+    process.inherit_resources(&current_process.lock());
     let pid = process.pid();
     Scheduler::lock().add_process(process);
 

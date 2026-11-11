@@ -116,7 +116,7 @@ impl Process {
             name,
             page_table: Self::create_user_table(),
             last_thread_id: 0,
-            resources: BTreeMap::new(),
+            resources: forked_process.resources.clone(),
 
             memory_regions: Vec::new(),
             threads_stack: BTreeMap::new(),
@@ -381,6 +381,10 @@ impl Process {
         file_descriptor: &FileDescriptorIndex,
     ) -> Option<Arc<dyn Resource>> {
         self.resources.remove(file_descriptor)
+    }
+
+    pub fn inherit_resources(&mut self, parent: &Process) {
+        self.resources = parent.resources.clone();
     }
 
     pub fn replace_resource(

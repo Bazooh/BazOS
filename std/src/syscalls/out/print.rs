@@ -12,7 +12,7 @@ macro_rules! print {
 #[doc(hidden)]
 pub fn _print(args: core::fmt::Arguments) {
     use core::fmt::Write;
-    crate::syscalls::out::writer::Writer
+    crate::syscalls::out::writer::Writer::stdout()
         .write_fmt(args)
         .unwrap();
 }

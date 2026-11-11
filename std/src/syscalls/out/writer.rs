@@ -1,13 +1,27 @@
-use common::syscall::{SyscallNumber::Out, syscall};
-use core::fmt::{Result, Write};
+use crate::syscalls::fs::write::write_all;
+use common::fs::FileDescriptorIndex;
+use core::fmt::{Error, Result, Write};
 
-pub struct Writer;
+pub(crate) struct Writer {
+    fd_index: FileDescriptorIndex,
+}
+
+impl Writer {
+    pub(crate) fn stdout() -> Self {
+        Self {
+            fd_index: FileDescriptorIndex::STDOUT,
+        }
+    }
+
+    pub(crate) fn stderr() -> Self {
+        Self {
+            fd_index: FileDescriptorIndex::STDERR,
+        }
+    }
+}
 
 impl Write for Writer {
     fn write_str(&mut self, string: &str) -> Result {
-        match syscall(Out, string.as_ptr() as u64, string.len() as u64, 0, 0) {
-            0 => Ok(()),
-            _ => Err(core::fmt::Error),
-        }
+        write_all(self.fd_index, string.as_bytes()).map_err(|_| Error)
     }
 }

@@ -1,7 +1,8 @@
+use crate::syscalls::fs::write::write_all;
 use alloc::string::String;
 use common::fs::FileDescriptorIndex;
 use common::opened_resource::{BLOCK_SIZE, Resource};
-use common::syscall::SyscallNumber::{Close, DuplicateFd, Read, ReplaceFd, Write};
+use common::syscall::SyscallNumber::{Close, DuplicateFd, Read, ReplaceFd};
 use common::syscall::syscall;
 use common::syscall_errors::duplicate_fd::DuplicateFdError;
 use common::syscall_errors::read::ReadError;
@@ -68,17 +69,7 @@ impl Resource for FileDescriptorResource {
     }
 
     fn write(&self, data: &[u8]) -> Result<(), ()> {
-        let wrote = syscall(
-            Write,
-            self.fd_index.as_u64(),
-            data.as_ptr() as u64,
-            data.len() as u64,
-            0,
-        );
-        if wrote != 0 {
-            return Err(());
-        }
-        Ok(())
+        write_all(self.fd_index, data)
     }
 
     fn name(&self) -> &str {

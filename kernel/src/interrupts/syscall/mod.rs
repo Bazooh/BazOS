@@ -6,10 +6,7 @@ use crate::interrupts::syscall::open::open_handler;
 use crate::interrupts::syscall::read::read_handler;
 use crate::interrupts::syscall::replace_fd::replace_fd_handler;
 use crate::interrupts::syscall::write::write_handler;
-use crate::interrupts::{
-    idt::ExceptionStackFrame,
-    syscall::{fork::fork_handler, out::out_handler},
-};
+use crate::interrupts::{idt::ExceptionStackFrame, syscall::fork::fork_handler};
 use crate::{hlt_loop, interrupts};
 use common::fs::FileDescriptorIndex;
 pub(crate) use common::syscall::SyscallNumber;
@@ -21,7 +18,6 @@ mod exec;
 mod fork;
 mod mmap;
 mod open;
-mod out;
 
 mod close;
 mod duplicate_fd;
@@ -38,7 +34,6 @@ pub unsafe extern "C" fn syscall_handler(
     frame: &ExceptionStackFrame,
 ) -> i64 {
     match syscall_number {
-        SyscallNumber::Out => out_handler(unsafe { to_str(arg0, arg1) }),
         SyscallNumber::Fork => fork_handler(frame),
         SyscallNumber::Exec => exec_handler(unsafe { to_str(arg0, arg1) }, unsafe {
             to_slice(arg2, arg3)

@@ -22,7 +22,7 @@ pub fn write_handler(file_descriptor: FileDescriptorIndex, buffer: Result<&[u8],
             }
 
             match resource.write(buffer) {
-                Ok(_) => 0,
+                Ok(_) => buffer.len() as i64,
                 Err(_) => -1,
             }
         }

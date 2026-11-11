@@ -3,30 +3,28 @@ use core::arch::asm;
 #[repr(u64)]
 #[derive(Debug)]
 pub enum SyscallNumber {
-    /// Out(ptr, len)
-    Out = 1,
     /// Fork() -> pid
-    Fork = 2,
+    Fork = 1,
     /// Exec(file_ptr, file_len, args_ptr, args_len) -> pid
-    Exec = 3,
+    Exec = 2,
     /// Exit(code) -> !
-    Exit = 4,
+    Exit = 3,
     /// MMap(n_pages) -> addr
-    MMap = 5,
+    MMap = 4,
     /// MUnmap(addr, n_pages)
-    MUnmap = 6,
+    MUnmap = 5,
     /// Open(filename_ptr,filename_len) -> fd
-    Open = 7,
+    Open = 6,
     /// Read(fd, buffer_ptr, buffer_len) -> n_bytes
-    Read = 8,
+    Read = 7,
     /// Write(fd, buffer_ptr, buffer_len) -> n_bytes
-    Write = 9,
+    Write = 8,
     /// Close(fd)
-    Close = 10,
+    Close = 9,
     /// DuplicateFd(fd) -> new_fd
-    DuplicateFd = 11,
+    DuplicateFd = 10,
     /// ReplaceFd(old_fd, new_fd)
-    ReplaceFd = 12,
+    ReplaceFd = 11,
 }
 
 pub fn syscall(syscall_number: SyscallNumber, arg0: u64, arg1: u64, arg2: u64, arg3: u64) -> i64 {
